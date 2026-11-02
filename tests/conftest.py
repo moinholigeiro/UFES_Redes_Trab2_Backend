@@ -111,10 +111,25 @@ def free_port() -> int:
 class ServerThread:
     """uvicorn em thread separada, para testar streaming e cancelamento com HTTP real."""
 
-    def __init__(self, app: Any, port: int) -> None:
+    def __init__(
+        self,
+        app: Any,
+        port: int,
+        *,
+        ssl_certfile: Path | None = None,
+        ssl_keyfile: Path | None = None,
+    ) -> None:
         self.port = port
         self.app = app
-        cfg = uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning", lifespan="on")
+        cfg = uvicorn.Config(
+            app,
+            host="127.0.0.1",
+            port=port,
+            log_level="warning",
+            lifespan="on",
+            ssl_certfile=str(ssl_certfile) if ssl_certfile else None,
+            ssl_keyfile=str(ssl_keyfile) if ssl_keyfile else None,
+        )
         self.server = uvicorn.Server(cfg)
         self.thread = threading.Thread(target=self.server.run, daemon=True)
 

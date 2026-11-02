@@ -63,6 +63,15 @@ class Job:
     events: asyncio.Queue
     enqueued_at: float
     deadline: float
+    requested_domain: str | None = None
+    user_pseudonym: str | None = None
+    requested_model: str | None = None
+    route_confidence: float | None = None
+    complexity: str | None = None
+    complexity_confidence: float | None = None
+    attempt: int = 0
+    attempt_nodes: list[str] = field(default_factory=list)
+    attempt_enqueued_at: float | None = None
     model: str = ""
     node: str = ""
     state: JobState = JobState.QUEUED
@@ -85,7 +94,7 @@ class Job:
         return self.state in TERMINAL_STATES
 
     def queue_wait_ms(self) -> float | None:
-        return _ms(self.enqueued_at, self.dispatched_at)
+        return _ms(self.attempt_enqueued_at or self.enqueued_at, self.dispatched_at)
 
     def ttft_ms(self) -> float | None:
         return _ms(self.enqueued_at, self.first_delta_at)

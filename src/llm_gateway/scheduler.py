@@ -47,6 +47,8 @@ class NodeScheduler:
         self._log = log
         self._pending: deque[Job] = deque()
         self._active: dict[str, Job] = {}
+        self.healthy = True
+        self.last_failure: str | None = None
         self._wake = asyncio.Event()
         self._dispatcher: asyncio.Task | None = None
 
@@ -86,6 +88,9 @@ class NodeScheduler:
             raise Overloaded(self.name)
         job.node = self.name
         job.model = self.node.model
+        job.attempt += 1
+        job.attempt_nodes.append(self.name)
+        job.attempt_enqueued_at = time.monotonic()
         job.queue_depth_at_admission = self.in_system
         job.state = JobState.QUEUED
         self._pending.append(job)
@@ -215,6 +220,9 @@ class NodeScheduler:
             raise JobError("client_too_slow", "cliente não consumiu a saída no prazo") from err
 
     def _fail(self, job: Job, code: str, message: str) -> None:
+        if code in {"backend_unavailable", "backend_timeout", "incomplete_stream"}:
+            self.healthy = False
+            self.last_failure = code
         job.state = JobState.FAILED
         job.error_code = code
         self.stats.failed += 1
@@ -235,6 +243,8 @@ class NodeScheduler:
     def snapshot(self) -> dict[str, Any]:
         return {
             "model": self.node.model,
+            "healthy": self.healthy,
+            "last_failure": self.last_failure,
             "max_inflight": self.node.max_inflight,
             "max_queue": self.node.max_queue,
             "active": self.active_count,

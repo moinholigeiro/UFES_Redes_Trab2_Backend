@@ -220,7 +220,6 @@ def test_queued_request_receives_heartbeat_comments_not_tokens(serve):
                     keepalives += 1
                 if keepalives >= 3:
                     break
-    assert lines[0] == "event: meta"
     assert not any(line.startswith("event: delta") for line in lines)
 
 

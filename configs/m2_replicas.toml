@@ -1,0 +1,111 @@
+# Perfil de M2 com auth, autorização, rate limit, TLS, roteador e réplica equivalente.
+# Exige mais memória que o perfil de 8 GB; use em host com folga de RAM.
+# Execute todos os comandos a partir da raiz do repositório.
+
+[gateway]
+host = "127.0.0.1"
+port = 8080
+max_request_bytes = 65536
+max_input_chars = 8000
+max_output_tokens_limit = 1024
+request_deadline_s = 600.0
+queue_timeout_s = 120.0
+client_stall_timeout_s = 30.0
+backend_read_timeout_s = 60.0
+event_buffer_size = 64
+heartbeat_interval_s = 15.0
+metrics_log = "artifacts/logs/requests.jsonl"
+allow_simulated_backends = false
+tls_certfile = "artifacts/tls/gateway.crt"
+tls_keyfile = "artifacts/tls/gateway.key"
+
+[security]
+enabled = true
+users_file = "secrets/users.toml"
+require_tls = true
+
+[router]
+enabled = true
+examples_file = "data/routing_examples.jsonl"
+confidence_threshold = 0.60
+complexity_confidence_threshold = 0.55
+test_fraction = 0.25
+random_seed = 42
+
+[balancing]
+policy = "round_robin"
+
+[models."qwen3-1.7b"]
+file = "models/Qwen3-1.7B-Q4_K_M.gguf"
+family = "qwen3"
+quantization = "Q4_K_M"
+source = "unsloth/Qwen3-1.7B-GGUF@d7f544eead698dbd1f15126ef60b45a1e1933222"
+license = "apache-2.0 (Qwen/Qwen3-1.7B)"
+sha256 = "b139949c5bd74937ad8ed8c8cf3d9ffb1e99c866c823204dc42c0d91fa181897"
+context_tokens = 4096
+
+[models.qwen35-4b]
+file = "models/Qwen3.5-4B-Q4_K_M.gguf"
+family = "qwen3.5"
+quantization = "Q4_K_M"
+source = "unsloth/Qwen3.5-4B-GGUF@e87f176479d0855a907a41277aca2f8ee7a09523"
+license = "apache-2.0 (Qwen/Qwen3.5-4B)"
+sha256 = "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4"
+context_tokens = 4096
+
+[domains.redes]
+description = "Assistente da disciplina de Redes de Computadores"
+models = ["qwen3-1.7b", "qwen35-4b"]
+default_model = "qwen3-1.7b"
+model_by_complexity = { simple = "qwen3-1.7b", complex = "qwen35-4b" }
+prompt = "redes-v1"
+output = "text"
+temperature = 0.7
+top_p = 0.8
+top_k = 20
+default_max_output_tokens = 512
+max_output_tokens = 1024
+
+[domains.prontuario]
+description = "Extração estruturada de prontuário sintético (não é ferramenta clínica)"
+models = ["qwen3-1.7b", "qwen35-4b"]
+default_model = "qwen35-4b"
+model_by_complexity = { simple = "qwen3-1.7b", complex = "qwen35-4b" }
+prompt = "prontuario-v1"
+output = "json_extraction"
+schema = "prontuario-v1"
+temperature = 0.0
+top_p = 1.0
+top_k = 0
+default_max_output_tokens = 768
+max_output_tokens = 1024
+
+[[nodes]]
+name = "redes-1"
+url = "http://127.0.0.1:8101"
+model = "qwen3-1.7b"
+max_inflight = 1
+max_queue = 16
+threads = 4
+ctx_size = 4096
+chat_template_kwargs = { enable_thinking = false }
+
+[[nodes]]
+name = "redes-2"
+url = "http://127.0.0.1:8103"
+model = "qwen3-1.7b"
+max_inflight = 1
+max_queue = 16
+threads = 4
+ctx_size = 4096
+chat_template_kwargs = { enable_thinking = false }
+
+[[nodes]]
+name = "prontuario-1"
+url = "http://127.0.0.1:8102"
+model = "qwen35-4b"
+max_inflight = 1
+max_queue = 16
+threads = 4
+ctx_size = 4096
+chat_template_kwargs = { enable_thinking = false }

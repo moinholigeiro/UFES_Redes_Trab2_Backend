@@ -15,7 +15,10 @@
     package = pkgs.python313;
     venv = {
       enable = true;
-      requirements = "-e .[dev]";
+      requirements = ''
+        -e .[dev]
+        scikit-learn>=1.6
+      '';
     };
   };
 

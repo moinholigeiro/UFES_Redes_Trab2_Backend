@@ -19,6 +19,36 @@ def test_repository_config_loads():
     assert all(n.kind == "llama_server" for n in cfg.nodes)
 
 
+def test_secure_m2_profile_requires_auth_credentials_and_tls():
+    cfg = load_config(ROOT / "configs" / "m2_secure.toml")
+    assert cfg.security.enabled is True
+    assert cfg.security.require_tls is True
+    assert cfg.security.users_file == Path("secrets/users.toml")
+    assert cfg.gateway.tls_certfile == Path("artifacts/tls/gateway.crt")
+    assert cfg.router.enabled is True
+    assert cfg.domains["redes"].default_model != cfg.domains["prontuario"].default_model
+    assert set(cfg.domains["redes"].models) == set(cfg.domains["prontuario"].models)
+
+
+def test_replica_profile_has_two_equivalent_nodes_for_same_model():
+    cfg = load_config(ROOT / "configs" / "m2_replicas.toml")
+    replicas = [node for node in cfg.nodes if node.model == "qwen3-1.7b"]
+    assert [node.name for node in replicas] == ["redes-1", "redes-2"]
+    assert len({(node.threads, node.ctx_size, node.max_inflight) for node in replicas}) == 1
+
+
+def test_tls_pair_and_security_requirements_are_validated():
+    raw = sim_config_dict()
+    raw["gateway"]["tls_certfile"] = "cert.crt"
+    with pytest.raises(ValidationError, match="devem ser informados juntos"):
+        build(raw)
+
+    raw = sim_config_dict()
+    raw["security"] = {"enabled": True, "require_tls": True, "users_file": "users.toml"}
+    with pytest.raises(ValidationError, match="tls_certfile"):
+        build(raw)
+
+
 def test_simulated_config_is_valid_only_with_flag():
     raw = sim_config_dict()
     build(raw)
@@ -37,7 +67,7 @@ def test_unknown_model_reference_is_rejected():
 def test_domain_without_eligible_node_is_rejected():
     raw = sim_config_dict()
     raw["nodes"] = [n for n in raw["nodes"] if n["model"] != "sim-big"]
-    with pytest.raises(ValidationError, match="não tem nó elegível"):
+    with pytest.raises(ValidationError, match="não tem nó para o modelo"):
         build(raw)
 
 
@@ -93,4 +123,16 @@ def test_llama_node_requires_http_url():
     raw = sim_config_dict()
     raw["nodes"][0] = {"name": "x", "kind": "llama_server", "model": "sim-small", "url": "ftp://x"}
     with pytest.raises(ValidationError, match="url http"):
+        build(raw)
+
+
+def test_https_backend_requires_runtime_certificate_and_key():
+    raw = sim_config_dict()
+    raw["nodes"][0] = {
+        "name": "redes-1",
+        "kind": "llama_server",
+        "model": "sim-small",
+        "url": "https://localhost:8101",
+    }
+    with pytest.raises(ValidationError, match="nó https exige"):
         build(raw)

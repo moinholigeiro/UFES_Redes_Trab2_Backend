@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+import ssl
 import sys
 import time
 from pathlib import Path
@@ -22,6 +24,8 @@ def run_request(
     *,
     timeout_s: float,
     echo: bool,
+    ca_file: Path | None = None,
+    bearer_token: str | None = None,
 ) -> dict[str, Any]:
     body: dict[str, Any] = {"domain": domain, "input": text}
     if max_output_tokens is not None:
@@ -37,13 +41,17 @@ def run_request(
         "http_status": None,
     }
     started = time.monotonic()
+    verify: bool | ssl.SSLContext = ssl.create_default_context(cafile=str(ca_file)) if ca_file else True
+    headers = {"Accept": "text/event-stream"}
+    if bearer_token:
+        headers["Authorization"] = f"Bearer {bearer_token}"
     with (
-        httpx.Client(timeout=timeout_s) as client,
+        httpx.Client(timeout=timeout_s, verify=verify) as client,
         client.stream(
             "POST",
             url.rstrip("/") + "/v1/generate",
             json=body,
-            headers={"Accept": "text/event-stream"},
+            headers=headers,
         ) as resp,
     ):
         report["http_status"] = resp.status_code
@@ -85,6 +93,14 @@ def main(argv: list[str] | None = None) -> int:
     source.add_argument("--input-file", type=Path, help="arquivo UTF-8 com o texto")
     parser.add_argument("--max-output-tokens", type=int)
     parser.add_argument("--timeout", type=float, default=600.0)
+    parser.add_argument(
+        "--ca", type=Path, help="CA bundle para validar TLS privado (nunca desabilita verify)"
+    )
+    parser.add_argument(
+        "--token-env",
+        default="LLM_GATEWAY_TOKEN",
+        help="variável de ambiente com token Bearer (não o passe em argv)",
+    )
     parser.add_argument("--json", action="store_true", help="imprime só o relatório JSON final")
     args = parser.parse_args(argv)
 
@@ -97,6 +113,8 @@ def main(argv: list[str] | None = None) -> int:
             args.max_output_tokens,
             timeout_s=args.timeout,
             echo=not args.json,
+            ca_file=args.ca,
+            bearer_token=os.environ.get(args.token_env),
         )
     except httpx.HTTPError as err:
         print(f"falha de conexão: {err}", file=sys.stderr)

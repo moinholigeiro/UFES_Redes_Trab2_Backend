@@ -13,6 +13,10 @@ from .metrics import RequestLog
 from .scheduler import NodeScheduler, Overloaded
 
 
+class NoHealthyNodes(Exception):
+    """Nenhum backend elegível está saudável no momento."""
+
+
 class Gateway:
     def __init__(self, config: AppConfig, backends: dict[str, Backend], log: RequestLog) -> None:
         self.config = config
@@ -44,13 +48,54 @@ class Gateway:
 
     def admit(self, job: Job) -> NodeScheduler:
         """Escolhe o nó pela política e admite o job. Levanta Overloaded se todos estiverem cheios."""
-        for sched in self.balancer.order(job.domain, self.domain_nodes[job.domain]):
+        domain_config = self.config.domains[job.domain]
+        target_model = job.requested_model or domain_config.default_model or domain_config.models[0]
+        candidates = [s for s in self.domain_nodes[job.domain] if s.healthy and s.node.model == target_model]
+        if not candidates:
+            raise NoHealthyNodes(job.domain)
+        for sched in self.balancer.order(job.domain, candidates):
             try:
                 sched.admit(job)
                 return sched
             except Overloaded:
                 continue
         raise Overloaded(job.domain)
+
+    def retry_before_first_delta(self, job: Job) -> bool:
+        """Reenfileira uma única vez em réplica compatível após falha sem delta.
+
+        A chamada deve ocorrer depois que a task da tentativa anterior terminou,
+        para que o slot e o log daquela tentativa já estejam liberados/gravados.
+        """
+        if job.delta_count or job.attempt > self.config.balancing.max_failover_attempts:
+            return False
+        attempted = set(job.attempt_nodes)
+        candidates = [
+            s
+            for s in self.domain_nodes[job.domain]
+            if s.healthy and s.name not in attempted and s.node.model == job.model
+        ]
+        for sched in self.balancer.order(job.domain, candidates):
+            while not job.events.empty():
+                job.events.get_nowait()
+            try:
+                sched.admit(job)
+                job.error_code = None
+                job.cancel_reason = None
+                job.finish_reason = None
+                job.finished_at = None
+                job.dispatched_at = None
+                job.first_delta_at = None
+                job.last_delta_at = None
+                job.completion_tokens = None
+                job.tokens_source = None
+                job.delta_count = 0
+                job.output_chars = 0
+                job.task = None
+                return True
+            except Overloaded:
+                continue
+        return False
 
     def cancel(self, job: Job, reason: str) -> None:
         if job.node:
