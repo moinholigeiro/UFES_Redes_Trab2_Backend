@@ -43,33 +43,72 @@ class LlamaServerBackend:
     async def stream(self, job: Job) -> AsyncIterator[Chunk]:
         finish: str | None = None
         usage: dict[str, Any] | None = None
+        saw_done = False
         try:
             async with self._client.stream("POST", self._endpoint, json=self._body(job)) as resp:
                 if resp.status_code != 200:
-                    await resp.aread()
+                    preview = bytearray()
+                    async for block in resp.aiter_bytes():
+                        preview.extend(block[: 4096 - len(preview)])
+                        if len(preview) >= 4096:
+                            break
                     code = "backend_unavailable" if resp.status_code == 503 else "backend_error"
                     raise JobError(code, f"nó {self._node.name} respondeu HTTP {resp.status_code}")
                 async for line in resp.aiter_lines():
+                    if len(line.encode("utf-8", errors="replace")) > self._node.max_frame_bytes:
+                        raise JobError("backend_protocol_error", "nó enviou frame acima do limite")
                     if not line.startswith("data:"):
                         continue
                     payload = line[len("data:") :].strip()
                     if payload == "[DONE]":
-                        break
+                        if saw_done:
+                            raise JobError("backend_protocol_error", "nó enviou múltiplas terminações")
+                        saw_done = True
+                        continue
+                    if saw_done:
+                        raise JobError("backend_protocol_error", "nó enviou dados após [DONE]")
                     event = json.loads(payload)
+                    if not isinstance(event, dict):
+                        raise JobError("backend_protocol_error", "nó enviou frame inválido")
                     if "error" in event:
                         raise JobError("backend_error", f"nó {self._node.name} reportou erro interno")
+                    if finish is not None and event.get("choices"):
+                        raise JobError("backend_protocol_error", "nó enviou choices após finish")
                     if event.get("usage"):
+                        if not isinstance(event["usage"], dict):
+                            raise JobError("backend_protocol_error", "nó enviou usage inválido")
                         usage = event["usage"]
-                    for choice in event.get("choices") or []:
-                        content = (choice.get("delta") or {}).get("content")
+                    choices = event.get("choices")
+                    if not isinstance(choices, list):
+                        raise JobError("backend_protocol_error", "nó enviou choices inválido")
+                    for choice in choices:
+                        if not isinstance(choice, dict):
+                            raise JobError("backend_protocol_error", "nó enviou choice inválido")
+                        delta = choice.get("delta")
+                        if not isinstance(delta, dict):
+                            raise JobError("backend_protocol_error", "nó enviou delta inválido")
+                        content = delta.get("content")
+                        if content is not None and not isinstance(content, str):
+                            raise JobError("backend_protocol_error", "nó enviou conteúdo inválido")
                         if content:
                             yield Delta(content)
-                        if choice.get("finish_reason"):
-                            finish = choice["finish_reason"]
+                        reason = choice.get("finish_reason")
+                        if reason is not None:
+                            if reason not in {"stop", "length"} or finish is not None:
+                                raise JobError("backend_protocol_error", "nó enviou término inválido")
+                            finish = reason
+                if not saw_done or finish is None:
+                    raise JobError("incomplete_stream", "stream interno terminou sem [DONE] e finish válidos")
+                if usage is not None:
+                    token_count = usage.get("completion_tokens")
+                    if token_count is not None and (
+                        isinstance(token_count, bool) or not isinstance(token_count, int) or token_count < 0
+                    ):
+                        raise JobError("backend_protocol_error", "nó enviou contagem de tokens inválida")
         except httpx.ConnectError as err:
             raise JobError("backend_unavailable", f"nó {self._node.name} inacessível") from err
         except httpx.TimeoutException as err:
             raise JobError("backend_timeout", f"nó {self._node.name} sem resposta no prazo") from err
-        except (httpx.HTTPError, json.JSONDecodeError) as err:
+        except (httpx.HTTPError, json.JSONDecodeError, UnicodeDecodeError) as err:
             raise JobError("backend_error", f"falha de transporte com o nó {self._node.name}") from err
-        yield Finish(finish or "eof", usage)
+        yield Finish(finish, usage)

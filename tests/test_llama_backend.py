@@ -95,12 +95,61 @@ async def test_json_domain_sends_schema_as_response_format():
     await collect(backend_with(handler), make_job(schema="prontuario-v1"))
 
 
-async def test_eof_without_finish_reason_is_reported_as_eof():
+async def test_eof_without_done_is_rejected_even_with_finish_reason():
     def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(200, content=sse_body(content("parcial")))
+        return httpx.Response(200, content=sse_body(content("parcial"), STOP))
 
-    chunks = await collect(backend_with(handler), make_job())
-    assert chunks[-1] == Finish("eof", None)
+    with pytest.raises(JobError) as exc:
+        await collect(backend_with(handler), make_job())
+    assert exc.value.code == "incomplete_stream"
+
+
+async def test_done_without_finish_is_rejected():
+    with pytest.raises(JobError, match="finish válidos"):
+        backend = backend_with(lambda request: httpx.Response(200, content=sse_body("[DONE]")))
+        await collect(backend, make_job())
+
+
+async def test_usage_after_finish_and_before_done_is_preserved():
+    backend = backend_with(lambda request: httpx.Response(200, content=sse_body(STOP, USAGE, "[DONE]")))
+    assert await collect(backend, make_job()) == [Finish("stop", USAGE["usage"])]
+
+
+@pytest.mark.parametrize(
+    "chunks",
+    [
+        (content("parcial"), STOP, "[DONE]", STOP),
+        ({"choices": [{"delta": None, "finish_reason": None}]}, STOP, "[DONE]"),
+        ({"choices": [None]}, STOP, "[DONE]"),
+        ({"choices": "malformado"}, STOP, "[DONE]"),
+    ],
+)
+async def test_invalid_chunk_sequence_is_rejected(chunks):
+    backend = backend_with(lambda request: httpx.Response(200, content=sse_body(*chunks)))
+    with pytest.raises(JobError):
+        await collect(backend, make_job())
+
+
+async def test_frame_limit_is_enforced():
+    node = PRONT_NODE.model_copy(update={"max_frame_bytes": 1024})
+    backend = LlamaServerBackend(
+        node,
+        httpx.AsyncClient(
+            transport=httpx.MockTransport(
+                lambda request: httpx.Response(200, content=b"data: " + b"x" * 1100 + b"\n\n")
+            )
+        ),
+    )
+    with pytest.raises(JobError):
+        await collect(backend, make_job())
+
+
+async def test_length_finish_is_valid_protocol_but_indicates_truncation():
+    length = {"choices": [{"delta": {}, "finish_reason": "length"}]}
+    backend = backend_with(
+        lambda request: httpx.Response(200, content=sse_body(content("a"), length, "[DONE]"))
+    )
+    assert await collect(backend, make_job()) == [Delta("a"), Finish("length", None)]
 
 
 async def test_http_503_is_backend_unavailable():

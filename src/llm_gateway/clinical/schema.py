@@ -9,7 +9,7 @@ from __future__ import annotations
 import json
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, StrictInt, ValidationError
 
 
 class Medicamento(BaseModel):
@@ -33,7 +33,7 @@ class SinaisVitais(BaseModel):
 class ProntuarioV1(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    idade: int | None = Field(ge=0, le=130)
+    idade: StrictInt | None = Field(ge=0, le=130)
     sexo: Literal["masculino", "feminino"] | None
     queixa_principal: str | None
     diagnosticos: list[str]

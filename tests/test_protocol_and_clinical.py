@@ -67,6 +67,8 @@ def test_validate_accepts_complete_output_and_keeps_unknown_as_null():
         "[]",
         "{}",
         json.dumps({**VALID, "idade": 200}),
+        json.dumps({**VALID, "idade": "54"}),
+        json.dumps({**VALID, "idade": True}),
         json.dumps({**VALID, "sexo": "outro"}),
         json.dumps({**VALID, "campo_extra": 1}),
         json.dumps({**VALID, "sinais_vitais": {"pa": "120x80"}}),

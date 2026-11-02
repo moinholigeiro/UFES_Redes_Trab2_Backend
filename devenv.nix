@@ -1,9 +1,8 @@
 { pkgs, ... }:
 {
-  # Runtime de inferência (llama-server) e utilitários de terminal.
+  # Utilitários do gateway; inferência instalada/executada pelo repositório LLM.
   # Nada é instalado no sistema: tudo fica em .devenv/ e no venv do projeto.
   packages = [
-    pkgs.llama-cpp
     pkgs.curl
     pkgs.jq
     pkgs.openssl
@@ -17,7 +16,6 @@
       enable = true;
       requirements = ''
         -e .[dev]
-        scikit-learn>=1.6
       '';
     };
   };
@@ -25,7 +23,6 @@
   env.PYTHONUNBUFFERED = "1";
 
   enterShell = ''
-    echo "llama-server: $(llama-server --version 2>/dev/null | head -1)" >&2
     echo "python: $(python --version)" >&2
   '';
 }

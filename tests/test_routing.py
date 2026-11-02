@@ -146,6 +146,24 @@ def test_api_auto_routes_and_reports_decision_in_meta(serve):
     assert "".join(data["text"] for name, data in events if name == "delta") == "small model"
 
 
+def test_explicit_domain_uses_configured_default_model_not_complexity_router(serve):
+    server = serve(auto_api_config())
+    text = "O que significa TCP? Responda de modo direto para a disciplina de Redes."
+    with httpx.stream(
+        "POST",
+        f"{server.url}/v1/generate",
+        json={"domain": "redes", "input": text},
+        headers={"Accept": "text/event-stream"},
+        timeout=10,
+    ) as response:
+        events = list(iter_sse(response.iter_lines()))
+    meta = events[0][1]
+    assert meta["domain"] == "redes"
+    assert meta["model"] == "sim-small"
+    assert meta["complexity"] is None
+    assert "".join(data["text"] for name, data in events if name == "delta") == "small model"
+
+
 def test_api_uncertain_domain_returns_422_and_auto_disabled_is_explicit(serve):
     server = serve(auto_api_config())
     uncertain = httpx.post(

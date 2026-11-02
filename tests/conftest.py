@@ -31,14 +31,12 @@ def sim_config_dict(
 ) -> dict[str, Any]:
     models = {
         "sim-small": {
-            "file": "models/none.gguf",
             "family": "sim",
             "quantization": "none",
             "source": "simulado",
             "license": "n/a",
         },
         "sim-big": {
-            "file": "models/none.gguf",
             "family": "sim",
             "quantization": "none",
             "source": "simulado",

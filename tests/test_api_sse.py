@@ -91,8 +91,8 @@ def test_text_stream_is_progressive_ordered_and_unicode_preserving(serve):
     done = events[-1][1]
     assert done == {
         "finish_reason": "stop",
-        "completion_tokens": names.count("delta"),
-        "tokens_source": "deltas",
+        "completion_tokens": None,
+        "tokens_source": "unknown",
     }
 
 

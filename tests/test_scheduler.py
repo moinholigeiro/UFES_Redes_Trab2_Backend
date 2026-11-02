@@ -110,7 +110,8 @@ async def test_concurrency_limit_is_respected_and_dispatch_is_fifo(tmp_path):
     assert sched.active_count == 0 and sched.pending_count == 0
     records = read_log(log, tmp_path / "log.jsonl")
     assert len(records) == 6
-    assert all(r["status"] == "done" and r["tokens_source"] == "deltas" for r in records)
+    assert all(r["status"] == "done" and r["tokens_source"] == "unknown" for r in records)
+    assert all(r["completion_tokens"] is None for r in records)
 
 
 async def test_admission_rejects_when_capacity_is_full(tmp_path):
@@ -190,6 +191,38 @@ async def test_pending_job_expires_after_queue_timeout(tmp_path):
         assert waiting.state is JobState.EXPIRED
         sched.cancel(blocker, "test_cleanup")
     finally:
+        await sched.stop()
+
+
+async def test_pending_job_expires_at_total_deadline_before_queue_timeout(tmp_path):
+    sched, _log = make_sched(tmp_path, max_inflight=1, max_queue=4, tps=1.0, queue_timeout_s=60.0)
+    blocker, waiting = make_job(), make_job(deadline_s=0.2)
+    sched.admit(blocker)
+    sched.admit(waiting)
+    sched.start()
+    try:
+        events = await drain(waiting)
+        assert events[-1][0] == "error"
+        assert events[-1][1]["code"] == "deadline_exceeded"
+        assert waiting.state is JobState.EXPIRED
+        assert waiting not in sched._pending
+    finally:
+        sched.cancel(blocker, "test_cleanup")
+        await sched.stop()
+
+
+async def test_queue_timeout_is_not_replaced_by_long_total_deadline(tmp_path):
+    sched, _log = make_sched(
+        tmp_path, max_inflight=1, max_queue=2, tps=10.0, response="a " * 100, queue_timeout_s=0.1
+    )
+    blocker, waiting = make_job(), make_job(deadline_s=30.0)
+    sched.admit(blocker)
+    sched.admit(waiting)
+    sched.start()
+    try:
+        await drain(waiting)
+    finally:
+        sched.cancel(blocker, "test_cleanup")
         await sched.stop()
 
 

@@ -2,10 +2,25 @@
 .devenv/
 .direnv/
 .venv/
+.env
+.env.*
+!.env.example
+node_modules/
+dist/
+coverage/
+*.log
+.env
+.env.*
+!.env.example
+node_modules/
+dist/
+coverage/
+*.log
 
 # Pesos de modelos (GGUF, vários GB) e artefatos gerados
 models/
 artifacts/
+migration_inventory.local.json
 
 # Dataset com licença de redistribuição pendente (permanece local)
 data/anonymedbr/
@@ -15,6 +30,12 @@ data/anonymedbr/
 secrets/
 *.key
 *.pem
+*.p12
+*.pfx
+*.jks
+*.p12
+*.pfx
+*.jks
 
 # Python
 __pycache__/

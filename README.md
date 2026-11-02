@@ -1,7 +1,7 @@
 # Projeto 1 — Gateway distribuído de LLMs abertos
 
 **Disciplina:** Redes de Computadores · **UFES**
-**Estado:** M1 implementado; incrementos de M2 implementados em perfis próprios e exercitados com backends simulados e modelos reais. Avaliação clínica humana, comparação quantitativa de políticas e experimento M3 ainda estão pendentes. Veja [Estado de implementação](#estado-de-implementação).
+**Estado conservador:** núcleo e pilotos M2 existem, mas os marcos acadêmicos não estão concluídos. A suíte atual do Backend passou 94 testes; avaliações controladas, reprodução de falhas reais após as correções, frontend e M3 seguem pendentes. Não tratar smoke ou teste unitário como benchmark ou validação clínica.
 
 Gateway que recebe requisições de vários clientes, enfileira por nó e encaminha, em streaming SSE, para runtimes locais de inferência (`llama-server`/llama.cpp). Os domínios são extração estruturada de prontuários sintéticos e um assistente da disciplina de Redes.
 
@@ -9,17 +9,19 @@ Gateway que recebe requisições de vários clientes, enfileira por nó e encami
 
 Documento de handoff e decisões: [`PLANO_COMPLETO_PROJETO_1.md`](PLANO_COMPLETO_PROJETO_1.md). Enunciado: [`Propostas de Trabalho.md`](Propostas%20de%20Trabalho.md).
 
+Plano atualizado de revisão, correções, atividades pendentes e separação em frontend/backend/LLM: [`PLANO_CONTINUIDADE_REVISAO_E_3_REPOS.md`](PLANO_CONTINUIDADE_REVISAO_E_3_REPOS.md). A migração local foi iniciada de forma reversível: a origem permanece aqui; os destinos irmãos são `../UFES_Redes_Trab2_Backend/`, `../UFES_Redes_Trab2_Frontend/` e `../UFES_Redes_Trab2_LLM/`. Nenhum remoto foi criado e nenhum push foi feito.
+
 ## Estado de implementação
 
 | Item | Situação |
 | --- | --- |
-| Protocolo cliente → gateway: `POST /v1/generate` com SSE (`meta`, `delta`, `result`, `done`, `error`, heartbeat como comentário) | **Implementado** e testado com servidor HTTP real e com `llama-server` real |
+| Protocolo cliente → gateway: `POST /v1/generate` com SSE (`meta`, `delta`, `result`, `done`, `error`, heartbeat como comentário) | **Implementado**; teste unitário do adapter com transporte simulado. Smokes reais anteriores não são benchmark |
 | Dois domínios com modelos, prompts e parâmetros distintos (`redes`, `prontuario`) | **Implementado**: Qwen3 1.7B e Qwen3.5 4B, ambos Q4_K_M |
 | Extração de prontuário com JSON Schema (geração restrita) e validação ao fim | **Implementado** (schema v1); **qualidade não avaliada** (F3) |
 | Fila explícita por nó: `max_inflight`, `max_queue`, expiração, cancelamento, 503 `queue_full` | **Implementado** e testado |
 | Cancelamento por desconexão do cliente libera o slot; cliente lento é cortado | **Implementado** e testado |
 | Falha durante o stream → `error` com `partial=true`, sem `done` | **Implementado** e **verificado com a morte real do runtime** |
-| TTFT, tempo na fila, serviço, latência fim a fim, tokens/s de decodificação, log JSONL por requisição | **Implementado** (sem texto de entrada/saída no log) |
+| Tempos de fila/serviço e log JSONL por requisição | **Piloto implementado**; medir TTFT/end-to-end integral e fonte correta de tokens continua pendente. Chunks SSE não são tokens; sem usage válido, tokens/s fica indefinido |
 | Balanceamento: round-robin, menor fila, menor latência (EWMA) | **Implementado**; políticas têm testes unitários e o perfil `m2_replicas.toml` fornece réplicas equivalentes |
 | Falha de backend | **Implementada**: retira nó indisponível, tenta uma réplica compatível uma vez antes do primeiro delta; mid-stream termina com erro parcial. Ambos verificados com runtime real |
 | Segurança: token, autorização por domínio, rate limit e TLS | **Implementada** no perfil M2; inclui token provisionado por CLI, `/metrics` restrito e CA validada pelo cliente |
@@ -32,7 +34,7 @@ Documento de handoff e decisões: [`PLANO_COMPLETO_PROJETO_1.md`](PLANO_COMPLETO
 
 Tudo fica em `.devenv/` e no venv do projeto. Nada é instalado globalmente.
 
-- [`devenv.yaml`](devenv.yaml) e [`devenv.nix`](devenv.nix): nixpkgs-unstable (travado em [`devenv.lock`](devenv.lock)), Python 3.13, `llama-cpp` (llama-server build 11960, commit 8642541), curl, jq, openssl.
+- [`devenv.yaml`](devenv.yaml) e [`devenv.nix`](devenv.nix): nixpkgs-unstable (travado em [`devenv.lock`](devenv.lock)), Python 3.13 e utilitários do gateway. Runtime llama.cpp está no repositório LLM.
 - [`pyproject.toml`](pyproject.toml): dependências Python (FastAPI, uvicorn, httpx, pydantic, scikit-learn) e de desenvolvimento (pytest, ruff), instaladas no venv em modo editável.
 
 ```bash
@@ -41,38 +43,18 @@ devenv shell          # entra no ambiente (cria o venv na primeira vez)
 
 ## Modelos
 
-Os pesos ficam em `models/` (fora do versionamento). Os SHA-256 abaixo foram conferidos contra os metadados do Hugging Face.
+Runtime e pesos GGUF ficam exclusivamente no repositório LLM. O gateway usa aliases/metadados de modelo e URLs remotas, sem consultar filesystem de outro repositório. Consulte [`../UFES_Redes_Trab2_LLM/`](../UFES_Redes_Trab2_LLM/) para manifesto e verificação local.
 
-| Id no config | Arquivo | Origem (commit) | Quant. | Tamanho | SHA-256 | Licença | Uso |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| `qwen3-1.7b` | `models/Qwen3-1.7B-Q4_K_M.gguf` | `unsloth/Qwen3-1.7B-GGUF` @ `d7f544ee` | Q4_K_M | 1,03 GiB | `b139949c…181897` | Apache-2.0 (Qwen3-1.7B) | modelo pequeno para ambos os domínios |
-| `qwen35-4b` | `models/Qwen3.5-4B-Q4_K_M.gguf` | `unsloth/Qwen3.5-4B-GGUF` @ `e87f1764` | Q4_K_M | 2,55 GiB | `00fe7986…ef11a4` | Apache-2.0 (Qwen3.5-4B) | modelo maior para ambos os domínios |
+Fonte autoritativa dos arquivos/model cards/hashes: manifesto LLM. A licença de redistribuição deve ser confirmada em fontes oficiais antes de publicar pesos ou resultados.
 
-Baixar (a partir da raiz do repositório):
-
-```bash
-mkdir -p models
-curl -L -C - -o models/Qwen3-1.7B-Q4_K_M.gguf \
-  https://huggingface.co/unsloth/Qwen3-1.7B-GGUF/resolve/d7f544eead698dbd1f15126ef60b45a1e1933222/Qwen3-1.7B-Q4_K_M.gguf
-curl -L -C - -o models/Qwen3.5-4B-Q4_K_M.gguf \
-  https://huggingface.co/unsloth/Qwen3.5-4B-GGUF/resolve/e87f176479d0855a907a41277aca2f8ee7a09523/Qwen3.5-4B-Q4_K_M.gguf
-devenv shell -- llm-gateway check-config --config configs/cpu_minimal.toml --verify-models
-```
-
-Os repositórios `unsloth/*` são redistribuidores dos GGUF; a licença de cada modelo base deve ser confirmada no model card antes de publicar resultados. Não foram comparados outros candidatos (Gemma 4 E4B, Qwen3 4B) nesta etapa.
+Baixar/verificar pesos é uma operação local opt-in no repositório LLM; os testes do gateway não baixam modelos.
 
 ## Como executar (perfil mínimo de CPU)
 
-Cada runtime é um processo `llama-server` com **um slot** (`-np` igual a `max_inflight`), para que não haja fila oculta dentro do runtime. Use três terminais, todos dentro de `devenv shell`:
+Cada nó remoto é iniciado no host dele via `scripts/start-node` do repositório LLM, normalmente com **um slot**. Inicie os nós remotos e depois o gateway:
 
 ```bash
-# terminal 1 — nó de Redes (porta 8101)
-llm-gateway runtime --config configs/cpu_minimal.toml --node redes-1
-
-# terminal 2 — nó de prontuário (porta 8102)
-llm-gateway runtime --config configs/cpu_minimal.toml --node prontuario-1
-
-# terminal 3 — gateway (porta 8080)
+# host gateway — não exige GGUF/llama-server
 llm-gateway serve --config configs/cpu_minimal.toml
 ```
 
@@ -109,11 +91,9 @@ Guarde o token fora do repositório e exporte-o sem colocá-lo na linha de coman
 read -rsp 'Token do gateway: ' LLM_GATEWAY_TOKEN; export LLM_GATEWAY_TOKEN; echo
 ```
 
-Em terminais separados, rode os runtimes de `redes-1` e `prontuario-1` e depois o gateway. Todos os comandos devem ser executados dentro do mesmo ambiente devenv:
+Inicie os nós nos hosts LLM usando os perfis TLS privados do repositório LLM. No host do gateway rode apenas:
 
 ```bash
-llm-gateway runtime --config configs/m2_secure.toml --node redes-1
-llm-gateway runtime --config configs/m2_secure.toml --node prontuario-1
 llm-gateway serve --config configs/m2_secure.toml
 ```
 

@@ -121,14 +121,28 @@ class NodeScheduler:
 
     def _expire_pending(self) -> None:
         now = time.monotonic()
-        expired = [j for j in self._pending if now - j.enqueued_at >= self._queue_timeout_s]
+        expired = [
+            j
+            for j in self._pending
+            if now >= j.deadline or now - (j.attempt_enqueued_at or j.enqueued_at) >= self._queue_timeout_s
+        ]
         for job in expired:
             self._pending.remove(job)
             job.state = JobState.EXPIRED
-            job.error_code = "queue_timeout"
+            code = "deadline_exceeded" if now >= job.deadline else "queue_timeout"
+            job.error_code = code
             job.finished_at = now
             job.events.put_nowait(
-                ("error", self._error_payload(job, "queue_timeout", "tempo máximo na fila excedido"))
+                (
+                    "error",
+                    self._error_payload(
+                        job,
+                        code,
+                        "prazo excedido enquanto aguardava na fila"
+                        if code == "deadline_exceeded"
+                        else "tempo máximo na fila excedido",
+                    ),
+                )
             )
             self.stats.expired += 1
             self._log.write(job_record(job))
@@ -155,11 +169,16 @@ class NodeScheduler:
             job.state = JobState.CANCELLED
             self.stats.cancelled += 1
             raise
+        except Exception:
+            # Última barreira: um adapter/logger inesperado não pode deixar consumidor
+            # esperando indefinidamente nem manter a vaga reservada.
+            self._fail(job, "internal_error", "falha interna ao processar a requisição")
         finally:
             if job.finished_at is None:
                 job.finished_at = time.monotonic()
             self._active.pop(job.request_id, None)
-            self._log.write(job_record(job))
+            with contextlib.suppress(Exception):
+                self._log.write(job_record(job))
             self._wake.set()
 
     async def _stream(self, job: Job) -> None:
@@ -170,6 +189,20 @@ class NodeScheduler:
         try:
             async for chunk in chunks:
                 if isinstance(chunk, Delta):
+                    try:
+                        output_bytes = len(chunk.text.encode("utf-8", errors="strict")) + job.output_bytes
+                    except UnicodeEncodeError as err:
+                        raise JobError("backend_protocol_error", "nó enviou Unicode inválido") from err
+                    if output_bytes > self.node.max_output_bytes:
+                        raise JobError("output_too_large", "saída excedeu o limite do gateway")
+                    job.output_bytes = output_bytes
+                    try:
+                        output_bytes = len(chunk.text.encode("utf-8", errors="strict")) + job.output_bytes
+                    except UnicodeEncodeError as err:
+                        raise JobError("backend_protocol_error", "nó enviou Unicode inválido") from err
+                    if output_bytes > self.node.max_output_bytes:
+                        raise JobError("output_too_large", "saída excedeu o limite do gateway")
+                    job.output_bytes = output_bytes
                     now = time.monotonic()
                     if job.first_delta_at is None:
                         job.first_delta_at = now
@@ -188,8 +221,8 @@ class NodeScheduler:
             job.completion_tokens = int(usage["completion_tokens"])
             job.tokens_source = "backend_usage"
         else:
-            job.completion_tokens = job.delta_count
-            job.tokens_source = "deltas"
+            job.completion_tokens = None
+            job.tokens_source = "unknown"
 
         if finish == "length":
             raise JobError("truncated", "limite de tokens atingido antes do fim da resposta")
@@ -202,16 +235,27 @@ class NodeScheduler:
                 result = validate_output(job.schema, "".join(parts))
             except ValueError as err:
                 raise JobError("schema_invalid", "saída não validou contra o schema") from err
-            await self._emit(job, "result", {"schema": job.schema, "data": result})
-        await self._emit(
-            job,
-            "done",
-            {
-                "finish_reason": finish,
-                "completion_tokens": job.completion_tokens,
-                "tokens_source": job.tokens_source,
-            },
+        terminal = []
+        if result is not None:
+            terminal.append(("result", {"schema": job.schema, "data": result}))
+        terminal.append(
+            (
+                "done",
+                {
+                    "finish_reason": finish,
+                    "completion_tokens": job.completion_tokens,
+                    "tokens_source": job.tokens_source or "unknown",
+                },
+            )
         )
+        deadline = time.monotonic() + self._stall_timeout_s
+        while job.events.maxsize - job.events.qsize() < len(terminal):
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise JobError("client_too_slow", "cliente não consumiu a saída no prazo")
+            await asyncio.sleep(min(0.01, remaining))
+        for event in terminal:
+            job.events.put_nowait(event)
 
     async def _emit(self, job: Job, event: str, data: dict[str, Any]) -> None:
         try:
@@ -228,7 +272,9 @@ class NodeScheduler:
         self.stats.failed += 1
         queue = job.events
         while queue.full():
-            queue.get_nowait()
+            event, _ = queue.get_nowait()
+            if event == "delta":
+                job.delta_buffer_dropped += 1
         queue.put_nowait(("error", self._error_payload(job, code, message)))
 
     @staticmethod

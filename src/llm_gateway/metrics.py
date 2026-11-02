@@ -83,6 +83,8 @@ def job_record(job: Job) -> dict[str, Any]:
         "output_chars": job.output_chars,
         "max_output_tokens": job.max_output_tokens,
         "delta_count": job.delta_count,
+        "delta_buffer_dropped": job.delta_buffer_dropped,
+        "output_bytes": job.output_bytes,
         "completion_tokens": job.completion_tokens,
         "tokens_source": job.tokens_source,
         "partial_output_discarded": partial_discarded,

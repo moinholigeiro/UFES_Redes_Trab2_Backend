@@ -136,20 +136,28 @@ def create_app(config: AppConfig) -> FastAPI:
             async def probe_unhealthy_nodes() -> None:
                 while True:
                     for scheduler in gateway.nodes.values():
-                        if (
-                            scheduler.healthy
-                            or scheduler.node.kind != "llama_server"
-                            or not scheduler.node.url
-                        ):
+                        if scheduler.node.kind != "llama_server" or not scheduler.node.url:
                             continue
                         try:
                             response = await client.get(
                                 scheduler.node.url.rstrip("/") + "/health",
                                 timeout=gw_cfg.health_check_timeout_s,
                             )
+                            healthy_response = False
                             if response.status_code == 200:
+                                try:
+                                    payload = response.json()
+                                    healthy_response = (
+                                        isinstance(payload, dict) and payload.get("status") == "ok"
+                                    )
+                                except ValueError:
+                                    healthy_response = False
+                            if healthy_response:
                                 scheduler.healthy = True
                                 scheduler.last_failure = None
+                            else:
+                                scheduler.healthy = False
+                                scheduler.last_failure = "health_check_failed"
                         except httpx.HTTPError:
                             pass
                     await asyncio.sleep(gw_cfg.health_check_interval_s)
@@ -219,6 +227,7 @@ def create_app(config: AppConfig) -> FastAPI:
 
     @app.post("/v1/generate", response_model=None)
     async def generate(request: Request) -> JSONResponse | StreamingResponse:
+        request_received_at = time.monotonic()
         gateway: Gateway = app.state.gateway
         gw_cfg = config.gateway
         if config.security.require_tls and request.url.scheme != "https":
@@ -235,20 +244,27 @@ def create_app(config: AppConfig) -> FastAPI:
                     "limite de requisições excedido",
                     headers={"Retry-After": str(exc.retry_after_s)},
                 )
-        raw = await _read_limited(request, gw_cfg.max_request_bytes)
+        request_deadline = request_received_at + gw_cfg.request_deadline_s
+        try:
+            async with asyncio.timeout(15.0):
+                raw = await _read_limited(request, gw_cfg.max_request_bytes)
+        except TimeoutError:
+            return _error_response(408, "request_body_timeout", "leitura do corpo excedeu o prazo")
         try:
             req = GenerateRequest.model_validate_json(raw)
         except ValidationError:
             return _error_response(422, "invalid_request", "requisição inválida")
         if len(req.input) > gw_cfg.max_input_chars:
             return _error_response(413, "input_too_large", "entrada excede o limite de caracteres")
+        if time.monotonic() >= request_deadline:
+            return _error_response(408, "deadline_exceeded", "prazo total excedido ao ler a requisição")
         router: SemanticRouter | None = app.state.router
         if req.domain == "auto" and router is None:
             return _error_response(422, "router_disabled", "roteamento auto não está habilitado")
         if req.domain != "auto" and req.domain not in config.domains:
             return _error_response(400, "unknown_domain", f"domínio desconhecido: {req.domain!r}")
         decision = None
-        if router is not None:
+        if router is not None and req.domain == "auto":
             try:
                 decision = router.route(req.domain, req.input)
             except RouteUncertain as exc:
@@ -282,6 +298,9 @@ def create_app(config: AppConfig) -> FastAPI:
             )
 
         now = time.monotonic()
+        deadline = request_deadline
+        if now >= deadline:
+            return _error_response(408, "deadline_exceeded", "prazo total excedido antes da fila")
         job = Job(
             request_id=uuid.uuid4().hex,
             domain=resolved_domain,
@@ -295,7 +314,7 @@ def create_app(config: AppConfig) -> FastAPI:
             input_chars=len(req.input),
             events=asyncio.Queue(maxsize=gw_cfg.event_buffer_size),
             enqueued_at=now,
-            deadline=now + gw_cfg.request_deadline_s,
+            deadline=deadline,
             requested_domain=req.domain,
             user_pseudonym=principal.pseudonym if principal is not None else None,
             requested_model=(

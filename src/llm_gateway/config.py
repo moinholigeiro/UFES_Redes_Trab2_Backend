@@ -20,6 +20,7 @@ class GatewayConfig(_Strict):
     host: str = "127.0.0.1"
     port: int = Field(8080, ge=1, le=65535)
     max_request_bytes: int = Field(65536, ge=1024)
+    request_body_timeout_s: float = Field(15.0, gt=0)
     max_input_chars: int = Field(12000, ge=1)
     max_output_tokens_limit: int = Field(2048, ge=1)
     request_deadline_s: float = Field(600.0, gt=0)
@@ -72,13 +73,20 @@ class BalancingConfig(_Strict):
 
 
 class ModelConfig(_Strict):
-    file: Path
     family: str
     quantization: str
     source: str
     license: str
     sha256: str | None = None
     context_tokens: int = Field(4096, ge=256)
+
+    @model_validator(mode="after")
+    def _check_hash(self) -> ModelConfig:
+        if self.sha256 is not None and (
+            len(self.sha256) != 64 or any(char not in "0123456789abcdefABCDEF" for char in self.sha256)
+        ):
+            raise ValueError("sha256 do modelo deve ter 64 caracteres hexadecimais")
+        return self
 
 
 class DomainConfig(_Strict):
@@ -129,10 +137,8 @@ class NodeConfig(_Strict):
     model: str
     max_inflight: int = Field(1, ge=1)
     max_queue: int = Field(16, ge=1)
-    threads: int = Field(4, ge=1)
-    ctx_size: int = Field(4096, ge=256)
-    tls_certfile: Path | None = None
-    tls_keyfile: Path | None = None
+    max_frame_bytes: int = Field(262_144, ge=1024)
+    max_output_bytes: int = Field(2_097_152, ge=1024)
     chat_template_kwargs: dict[str, Any] = Field(default_factory=dict)
     simulation: SimulationConfig | None = None
 
@@ -141,10 +147,6 @@ class NodeConfig(_Strict):
         if self.kind == "llama_server":
             if not self.url or not self.url.startswith(("http://", "https://")):
                 raise ValueError("nó llama_server exige url http(s)")
-            if (self.tls_certfile is None) != (self.tls_keyfile is None):
-                raise ValueError("tls_certfile e tls_keyfile do nó devem ser informados juntos")
-            if self.url.startswith("https://") and self.tls_certfile is None:
-                raise ValueError("nó https exige tls_certfile e tls_keyfile para o runtime local")
             if self.simulation is not None:
                 raise ValueError("simulation só existe em nó simulated")
         else:

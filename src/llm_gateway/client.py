@@ -77,9 +77,13 @@ def run_request(
                 break
             elif event == "error":
                 report["error"] = data
+                report["result"] = None
                 break
         if report["done"] is None and report["error"] is None:
             report["error"] = {"code": "stream_interrupted", "message": "conexão encerrada sem done"}
+            report["result"] = None
+    if report["done"] is None:
+        report["result"] = None
     report["e2e_client_ms"] = round((time.monotonic() - started) * 1000, 3)
     return report
 
@@ -124,7 +128,7 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps(report, ensure_ascii=False, indent=2))
     else:
         sys.stdout.write("\n")
-        if report["result"] is not None:
+        if report["done"] is not None and report["error"] is None and report["result"] is not None:
             print(json.dumps(report["result"]["data"], ensure_ascii=False, indent=2))
         summary = {k: report[k] for k in ("ttft_client_ms", "e2e_client_ms", "deltas", "done", "error")}
         print(json.dumps(summary, ensure_ascii=False), file=sys.stderr)

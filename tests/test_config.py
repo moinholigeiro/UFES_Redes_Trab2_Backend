@@ -34,7 +34,7 @@ def test_replica_profile_has_two_equivalent_nodes_for_same_model():
     cfg = load_config(ROOT / "configs" / "m2_replicas.toml")
     replicas = [node for node in cfg.nodes if node.model == "qwen3-1.7b"]
     assert [node.name for node in replicas] == ["redes-1", "redes-2"]
-    assert len({(node.threads, node.ctx_size, node.max_inflight) for node in replicas}) == 1
+    assert len({(node.model, node.max_inflight, node.max_queue) for node in replicas}) == 1
 
 
 def test_tls_pair_and_security_requirements_are_validated():
@@ -126,7 +126,7 @@ def test_llama_node_requires_http_url():
         build(raw)
 
 
-def test_https_backend_requires_runtime_certificate_and_key():
+def test_https_backend_does_not_require_private_node_certificate_in_gateway():
     raw = sim_config_dict()
     raw["nodes"][0] = {
         "name": "redes-1",
@@ -134,5 +134,4 @@ def test_https_backend_requires_runtime_certificate_and_key():
         "model": "sim-small",
         "url": "https://localhost:8101",
     }
-    with pytest.raises(ValidationError, match="nó https exige"):
-        build(raw)
+    assert build(raw).nodes[0].url == "https://localhost:8101"

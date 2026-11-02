@@ -20,7 +20,6 @@ allow_simulated_backends = false
 policy = "round_robin"
 
 [models."qwen3-1.7b"]
-file = "models/Qwen3-1.7B-Q4_K_M.gguf"
 family = "qwen3"
 quantization = "Q4_K_M"
 source = "unsloth/Qwen3-1.7B-GGUF@d7f544eead698dbd1f15126ef60b45a1e1933222"
@@ -29,7 +28,6 @@ sha256 = "b139949c5bd74937ad8ed8c8cf3d9ffb1e99c866c823204dc42c0d91fa181897"
 context_tokens = 4096
 
 [models.qwen35-4b]
-file = "models/Qwen3.5-4B-Q4_K_M.gguf"
 family = "qwen3.5"
 quantization = "Q4_K_M"
 source = "unsloth/Qwen3.5-4B-GGUF@e87f176479d0855a907a41277aca2f8ee7a09523"
@@ -66,8 +64,6 @@ url = "http://127.0.0.1:8101"
 model = "qwen3-1.7b"
 max_inflight = 1
 max_queue = 16
-threads = 4
-ctx_size = 4096
 chat_template_kwargs = { enable_thinking = false }
 
 [[nodes]]
@@ -76,6 +72,4 @@ url = "http://127.0.0.1:8102"
 model = "qwen35-4b"
 max_inflight = 1
 max_queue = 16
-threads = 4
-ctx_size = 4096
 chat_template_kwargs = { enable_thinking = false }

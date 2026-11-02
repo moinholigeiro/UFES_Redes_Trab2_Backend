@@ -81,7 +81,9 @@ class Job:
     last_delta_at: float | None = None
     finished_at: float | None = None
     delta_count: int = 0
+    delta_buffer_dropped: int = 0
     output_chars: int = 0
+    output_bytes: int = 0
     completion_tokens: int | None = None
     tokens_source: str | None = None
     finish_reason: str | None = None
