@@ -196,13 +196,6 @@ class NodeScheduler:
                     if output_bytes > self.node.max_output_bytes:
                         raise JobError("output_too_large", "saída excedeu o limite do gateway")
                     job.output_bytes = output_bytes
-                    try:
-                        output_bytes = len(chunk.text.encode("utf-8", errors="strict")) + job.output_bytes
-                    except UnicodeEncodeError as err:
-                        raise JobError("backend_protocol_error", "nó enviou Unicode inválido") from err
-                    if output_bytes > self.node.max_output_bytes:
-                        raise JobError("output_too_large", "saída excedeu o limite do gateway")
-                    job.output_bytes = output_bytes
                     now = time.monotonic()
                     if job.first_delta_at is None:
                         job.first_delta_at = now

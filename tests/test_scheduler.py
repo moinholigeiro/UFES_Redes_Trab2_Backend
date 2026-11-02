@@ -10,6 +10,7 @@ from pathlib import Path
 
 import pytest
 
+from llm_gateway.backends.base import Delta, Finish
 from llm_gateway.backends.simulated import SimulatedBackend
 from llm_gateway.config import NodeConfig, SimulationConfig
 from llm_gateway.jobs import Job, JobState
@@ -46,6 +47,7 @@ def make_sched(
     fail_after: int | None = None,
     queue_timeout_s: float = 60.0,
     stall_s: float = 5.0,
+    max_output_bytes: int = 2_097_152,
 ) -> tuple[NodeScheduler, RequestLog]:
     sim = SimulationConfig(tokens_per_second=tps, response=response, fail_after_deltas=fail_after)
     node = NodeConfig(
@@ -54,6 +56,7 @@ def make_sched(
         model="m",
         max_inflight=max_inflight,
         max_queue=max_queue,
+        max_output_bytes=max_output_bytes,
         simulation=sim,
     )
     log = RequestLog(tmp_path / "log.jsonl")
@@ -79,6 +82,17 @@ async def drain(job: Job) -> list[tuple[str, dict]]:
 def read_log(log: RequestLog, path: Path) -> list[dict]:
     log.close()
     return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line]
+
+
+class UnicodeBackend:
+    def __init__(self, first: str, second: str):
+        self.first = first
+        self.second = second
+
+    async def stream(self, _job):
+        yield Delta(self.first)
+        yield Delta(self.second)
+        yield Finish("stop", {"completion_tokens": 2})
 
 
 async def test_concurrency_limit_is_respected_and_dispatch_is_fifo(tmp_path):
@@ -281,6 +295,43 @@ async def test_failure_before_first_delta_is_not_partial(tmp_path):
         )
     ]
     assert job.ttft_ms() is None
+
+
+async def test_output_byte_count_uses_utf8_once_and_accepts_exact_limit(tmp_path):
+    sched, log = make_sched(tmp_path, max_output_bytes=1024)
+    # Cada delta ocupa 512 bytes; o limite mínimo válido da configuração é 1024.
+    sched._backend = UnicodeBackend("é" * 256, "é" * 256)
+    job = make_job()
+    sched.admit(job)
+    sched.start()
+    try:
+        events = await drain(job)
+    finally:
+        await sched.stop()
+        log.close()
+
+    assert [name for name, _ in events] == ["delta", "delta", "done"]
+    assert job.output_bytes == 1024
+    assert job.output_chars == 512
+    assert job.delta_count == 2
+
+
+async def test_output_byte_limit_rejects_only_when_utf8_total_exceeds_limit(tmp_path):
+    sched, log = make_sched(tmp_path, max_output_bytes=1024)
+    sched._backend = UnicodeBackend("é" * 256, "é" * 257)
+    job = make_job()
+    sched.admit(job)
+    sched.start()
+    try:
+        events = await drain(job)
+    finally:
+        await sched.stop()
+        log.close()
+
+    assert [name for name, _ in events] == ["delta", "error"]
+    assert events[-1][1]["code"] == "output_too_large"
+    assert job.output_bytes == 512
+    assert job.output_chars == 256
 
 
 async def test_slow_client_is_cut_off_instead_of_buffering_forever(tmp_path):
