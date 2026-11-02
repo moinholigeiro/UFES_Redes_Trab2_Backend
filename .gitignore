@@ -1,0 +1,25 @@
+# Ambiente (devenv/nix e venv) — reconstruível a partir de devenv.nix/devenv.yaml
+.devenv/
+.direnv/
+.venv/
+
+# Pesos de modelos (GGUF, vários GB) e artefatos gerados
+models/
+artifacts/
+
+# Dataset com licença de redistribuição pendente (permanece local)
+data/anonymedbr/
+
+# Segredos e credenciais (tokens, chaves TLS)
+*.token
+secrets/
+*.key
+*.pem
+
+# Python
+__pycache__/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+build/
+dist/
