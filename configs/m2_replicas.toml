@@ -1,10 +1,12 @@
-# Perfil de M2 com auth, autorização, rate limit, TLS, roteador e réplica equivalente.
+# Perfil seguro M2 com auth, autorização, rate limit, TLS, roteador e réplica equivalente.
 # Exige mais memória que o perfil de 8 GB; use em host com folga de RAM.
 # Execute todos os comandos a partir da raiz do repositório.
+# Nós HTTPS: llm-small-a:8101, llm-small-b:8103 e llm-large-a:8102.
 
 [gateway]
 host = "127.0.0.1"
 port = 8080
+cors_origins = []
 max_request_bytes = 65536
 max_input_chars = 8000
 max_output_tokens_limit = 1024
@@ -12,6 +14,7 @@ request_deadline_s = 600.0
 queue_timeout_s = 120.0
 client_stall_timeout_s = 30.0
 backend_read_timeout_s = 60.0
+backend_ca_file = "secrets/llm-nodes-ca.pem"
 event_buffer_size = 64
 heartbeat_interval_s = 15.0
 metrics_log = "artifacts/logs/requests.jsonl"
@@ -80,7 +83,7 @@ max_output_tokens = 1024
 
 [[nodes]]
 name = "redes-1"
-url = "http://127.0.0.1:8101"
+url = "https://llm-small-a:8101"
 model = "qwen3-1.7b"
 max_inflight = 1
 max_queue = 16
@@ -88,7 +91,7 @@ chat_template_kwargs = { enable_thinking = false }
 
 [[nodes]]
 name = "redes-2"
-url = "http://127.0.0.1:8103"
+url = "https://llm-small-b:8103"
 model = "qwen3-1.7b"
 max_inflight = 1
 max_queue = 16
@@ -96,7 +99,7 @@ chat_template_kwargs = { enable_thinking = false }
 
 [[nodes]]
 name = "prontuario-1"
-url = "http://127.0.0.1:8102"
+url = "https://llm-large-a:8102"
 model = "qwen35-4b"
 max_inflight = 1
 max_queue = 16

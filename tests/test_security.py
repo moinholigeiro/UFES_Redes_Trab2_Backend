@@ -123,6 +123,19 @@ def test_token_bucket_refills_and_returns_retry_time():
     bucket.consume(now=11)
 
 
+def test_write_credentials_rejects_infinite_rate(tmp_path: Path):
+    with pytest.raises(ValueError, match="positivos"):
+        write_credential_file(
+            tmp_path / "users.toml",
+            username="aluno",
+            token=new_token(),
+            allowed_domains=["redes"],
+            requests_per_minute=float("inf"),
+            burst=1,
+            can_view_metrics=False,
+        )
+
+
 def test_http_requires_token_authorizes_domain_and_protects_metrics(serve, tmp_path: Path):
     users_file = tmp_path / "users.toml"
     raw, token = secure_raw(users_file)
@@ -159,8 +172,11 @@ def test_http_requires_token_authorizes_domain_and_protects_metrics(serve, tmp_p
         )
         with stream as resp:
             assert resp.status_code == 200
+            request_id = resp.headers["x-request-id"]
             events = list(iter_sse(resp.iter_lines()))
         assert events[-1][0] == "done"
+        assert events[0][1]["request_id"] == request_id
+        assert events[-1][1]["request_id"] == request_id
     log_text = (tmp_path / "requests.jsonl").read_text(encoding="utf-8")
     row = json.loads(log_text.splitlines()[-1])
     assert row["user_pseudonym"]

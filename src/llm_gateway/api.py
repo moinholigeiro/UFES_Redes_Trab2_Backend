@@ -14,13 +14,14 @@ from typing import Any
 
 import httpx
 from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import ValidationError
 
 from .backends import make_backend
 from .config import AppConfig, load_config
 from .gateway import Gateway, NoHealthyNodes
-from .jobs import Job
+from .jobs import FAILOVER_CODES, Job
 from .metrics import RequestLog
 from .prompts import build_messages, prompt_hash
 from .protocol import TERMINAL_EVENTS, GenerateRequest, sse_comment, sse_encode
@@ -74,7 +75,7 @@ async def _event_stream(
                     return
                 yield sse_comment("keepalive")
                 continue
-            if event == "error" and not data.get("partial") and data.get("retryable"):
+            if event == "error" and not data.get("partial") and data.get("code") in FAILOVER_CODES:
                 attempt_task = job.task
                 if attempt_task is not None:
                     await asyncio.gather(attempt_task, return_exceptions=True)
@@ -133,11 +134,13 @@ def create_app(config: AppConfig) -> FastAPI:
             )
             gateway.start()
 
-            async def probe_unhealthy_nodes() -> None:
-                while True:
-                    for scheduler in gateway.nodes.values():
-                        if scheduler.node.kind != "llama_server" or not scheduler.node.url:
-                            continue
+            async def probe_nodes_once() -> None:
+                semaphore = asyncio.Semaphore(16)
+
+                async def probe(scheduler: Any) -> None:
+                    if scheduler.node.kind != "llama_server" or not scheduler.node.url:
+                        return
+                    async with semaphore:
                         try:
                             response = await client.get(
                                 scheduler.node.url.rstrip("/") + "/health",
@@ -159,11 +162,21 @@ def create_app(config: AppConfig) -> FastAPI:
                                 scheduler.healthy = False
                                 scheduler.last_failure = "health_check_failed"
                         except httpx.HTTPError:
-                            pass
+                            scheduler.healthy = False
+                            scheduler.last_failure = "health_check_failed"
+
+                await asyncio.gather(*(probe(scheduler) for scheduler in gateway.nodes.values()))
+
+            async def probe_nodes() -> None:
+                while True:
+                    await probe_nodes_once()
                     await asyncio.sleep(gw_cfg.health_check_interval_s)
 
-            health_task = asyncio.create_task(probe_unhealthy_nodes(), name="backend-health-probe")
+            health_task = asyncio.create_task(probe_nodes(), name="backend-health-probe")
             try:
+                # Test now; do not leave a window where freshly started real
+                # nodes appear ready before the first probe cycle.
+                await probe_nodes_once()
                 yield
             finally:
                 health_task.cancel()
@@ -172,12 +185,27 @@ def create_app(config: AppConfig) -> FastAPI:
 
     app = FastAPI(title="LLM Gateway", version="0.1.0", lifespan=lifespan)
     app.state.config = config
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=config.gateway.cors_origins,
+        allow_credentials=False,
+        allow_methods=["GET", "POST", "OPTIONS"],
+        allow_headers=["Accept", "Authorization", "Content-Type"],
+        expose_headers=["Retry-After", "X-Request-ID"],
+        max_age=600,
+    )
 
     @app.exception_handler(_Reject)
     async def _on_reject(_: Request, exc: _Reject) -> JSONResponse:
         return _error_response(exc.status, exc.code, exc.message, exc.headers)
 
     def _principal(request: Request, *, metrics: bool = False) -> Principal | None:
+        authorization = request.headers.get("authorization")
+        if (
+            authorization is not None
+            and len(authorization.encode("latin-1", errors="replace")) > config.gateway.max_auth_header_bytes
+        ):
+            raise _Reject(400, "authorization_header_too_large", "header Authorization excede o limite")
         manager: SecurityManager | None = getattr(request.app.state, "security", None)
         if manager is None:
             return None
@@ -199,6 +227,15 @@ def create_app(config: AppConfig) -> FastAPI:
     @app.get("/health")
     async def health() -> dict[str, str]:
         return {"status": "ok"}
+
+    @app.get("/ready")
+    async def ready() -> JSONResponse:
+        states = {name: scheduler.healthy for name, scheduler in app.state.gateway.nodes.items()}
+        ready_status = any(states.values())
+        return JSONResponse(
+            status_code=200 if ready_status else 503,
+            content={"status": "ready" if ready_status else "not_ready", "nodes": states},
+        )
 
     @app.get("/v1/domains")
     async def domains() -> dict[str, Any]:
@@ -246,9 +283,15 @@ def create_app(config: AppConfig) -> FastAPI:
                 )
         request_deadline = request_received_at + gw_cfg.request_deadline_s
         try:
-            async with asyncio.timeout(15.0):
+            body_timeout = min(
+                gw_cfg.request_body_timeout_s,
+                max(0.0, request_deadline - time.monotonic()),
+            )
+            async with asyncio.timeout(body_timeout):
                 raw = await _read_limited(request, gw_cfg.max_request_bytes)
         except TimeoutError:
+            if time.monotonic() >= request_deadline:
+                return _error_response(408, "deadline_exceeded", "prazo total excedido ao ler a requisição")
             return _error_response(408, "request_body_timeout", "leitura do corpo excedeu o prazo")
         try:
             req = GenerateRequest.model_validate_json(raw)
@@ -340,11 +383,13 @@ def create_app(config: AppConfig) -> FastAPI:
                 "capacidade do domínio esgotada; tente novamente",
                 headers={"Retry-After": "1"},
             )
-        return StreamingResponse(
+        response = StreamingResponse(
             _event_stream(request, gateway, job, gw_cfg.heartbeat_interval_s),
             media_type="text/event-stream; charset=utf-8",
             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
         )
+        response.headers["X-Request-ID"] = job.request_id
+        return response
 
     return app
 

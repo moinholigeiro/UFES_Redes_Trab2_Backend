@@ -32,6 +32,8 @@ def _cmd_serve(args: argparse.Namespace) -> int:
         host=args.host or config.gateway.host,
         port=args.port or config.gateway.port,
         workers=1,
+        proxy_headers=False,
+        forwarded_allow_ips="",
         ssl_certfile=str(tls_cert) if tls_cert else None,
         ssl_keyfile=str(tls_key) if tls_key else None,
         log_level="info",

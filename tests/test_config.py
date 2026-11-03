@@ -17,6 +17,7 @@ def test_repository_config_loads():
     assert set(cfg.domains) == {"redes", "prontuario"}
     assert cfg.domains["redes"].models != cfg.domains["prontuario"].models
     assert all(n.kind == "llama_server" for n in cfg.nodes)
+    assert all(n.url.startswith("http://127.0.0.1") for n in cfg.nodes)
 
 
 def test_secure_m2_profile_requires_auth_credentials_and_tls():
@@ -28,6 +29,15 @@ def test_secure_m2_profile_requires_auth_credentials_and_tls():
     assert cfg.router.enabled is True
     assert cfg.domains["redes"].default_model != cfg.domains["prontuario"].default_model
     assert set(cfg.domains["redes"].models) == set(cfg.domains["prontuario"].models)
+    assert cfg.gateway.backend_ca_file == Path("secrets/llm-nodes-ca.pem")
+    assert all(node.url.startswith("https://") for node in cfg.nodes)
+
+    raw = load_config(ROOT / "configs" / "m2_secure.toml").model_dump(
+        mode="json", by_alias=True, exclude_none=True
+    )
+    raw["gateway"].pop("backend_ca_file")
+    with pytest.raises(ValidationError, match="backend_ca_file"):
+        build(raw)
 
 
 def test_replica_profile_has_two_equivalent_nodes_for_same_model():
@@ -119,6 +129,108 @@ def test_unknown_keys_are_rejected():
         build(raw)
 
 
+@pytest.mark.parametrize(
+    "origin",
+    [
+        "*",
+        "http://backend.example",
+        "https://frontend.example/path",
+        "https://user@frontend.example",
+        "https://frontend.example:99999",
+        "https://frontend.example/",
+    ],
+)
+def test_config_rejects_unsafe_cors_origins(origin):
+    raw = sim_config_dict(gateway={"cors_origins": [origin]})
+    with pytest.raises(ValidationError):
+        build(raw)
+
+
+@pytest.mark.parametrize("timeout", [float("inf"), float("nan")])
+def test_gateway_timeouts_must_be_finite(timeout):
+    raw = sim_config_dict(gateway={"request_deadline_s": timeout})
+    with pytest.raises(ValidationError):
+        build(raw)
+
+
+def test_health_check_timeout_cannot_exceed_probe_interval():
+    raw = sim_config_dict(gateway={"health_check_timeout_s": 3, "health_check_interval_s": 2})
+    with pytest.raises(ValidationError):
+        build(raw)
+
+
+def test_body_timeout_cannot_exceed_total_deadline():
+    with pytest.raises(ValidationError):
+        build(sim_config_dict(gateway={"request_body_timeout_s": 3, "request_deadline_s": 2}))
+
+
+def test_auth_header_limit_has_finite_bounds():
+    for limit in (127, 65_537):
+        with pytest.raises(ValidationError):
+            build(sim_config_dict(gateway={"max_auth_header_bytes": limit}))
+
+
+def test_event_buffer_must_reserve_result_and_done_slots():
+    raw = sim_config_dict(gateway={"event_buffer_size": 1})
+    with pytest.raises(ValidationError):
+        build(raw)
+
+
+def test_event_buffer_has_a_finite_upper_bound():
+    with pytest.raises(ValidationError):
+        build(sim_config_dict(gateway={"event_buffer_size": 65_537}))
+
+
+@pytest.mark.parametrize("url", ["http://user@node:8101", "https://node:99999", "http://node/path"])
+def test_node_url_rejects_credentials_invalid_port_and_path(url):
+    raw = sim_config_dict()
+    raw["nodes"][0] = {"name": "node", "kind": "llama_server", "url": url, "model": "sim-small"}
+    with pytest.raises(ValidationError):
+        build(raw)
+
+
+def test_remote_llm_node_requires_https():
+    raw = sim_config_dict()
+    raw["nodes"][0] = {
+        "name": "remote",
+        "kind": "llama_server",
+        "model": "sim-small",
+        "url": "http://node.example:8101",
+    }
+    with pytest.raises(ValidationError, match="loopback"):
+        build(raw)
+
+
+def test_real_llm_nodes_start_unhealthy_until_probe_succeeds():
+    from llm_gateway.backends.simulated import SimulatedBackend
+    from llm_gateway.metrics import RequestLog
+    from llm_gateway.scheduler import NodeScheduler
+
+    node = build(
+        {
+            **sim_config_dict(),
+            "nodes": [
+                {
+                    "name": "remote",
+                    "kind": "llama_server",
+                    "url": "http://127.0.0.1:8101",
+                    "model": "sim-small",
+                },
+                sim_config_dict()["nodes"][1],
+            ],
+        }
+    ).nodes[0]
+    scheduler = NodeScheduler(node, object(), stall_timeout_s=1, queue_timeout_s=1, log=RequestLog(None))
+    assert scheduler.healthy is False
+
+    simulated_node = build(sim_config_dict()).nodes[0]
+    simulated = SimulatedBackend(simulated_node.simulation)
+    sim_scheduler = NodeScheduler(
+        simulated_node, simulated, stall_timeout_s=1, queue_timeout_s=1, log=RequestLog(None)
+    )
+    assert sim_scheduler.healthy is True
+
+
 def test_llama_node_requires_http_url():
     raw = sim_config_dict()
     raw["nodes"][0] = {"name": "x", "kind": "llama_server", "model": "sim-small", "url": "ftp://x"}
@@ -134,4 +246,5 @@ def test_https_backend_does_not_require_private_node_certificate_in_gateway():
         "model": "sim-small",
         "url": "https://localhost:8101",
     }
+    raw["gateway"]["backend_ca_file"] = "ca.pem"
     assert build(raw).nodes[0].url == "https://localhost:8101"

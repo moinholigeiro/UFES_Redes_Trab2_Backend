@@ -15,6 +15,8 @@ import time
 from collections import deque
 from typing import Any
 
+import httpx
+
 from .backends.base import Backend, Delta, Finish
 from .clinical import validate_output
 from .config import NodeConfig
@@ -47,7 +49,7 @@ class NodeScheduler:
         self._log = log
         self._pending: deque[Job] = deque()
         self._active: dict[str, Job] = {}
-        self.healthy = True
+        self.healthy = node.kind == "simulated"
         self.last_failure: str | None = None
         self._wake = asyncio.Event()
         self._dispatcher: asyncio.Task | None = None
@@ -116,7 +118,17 @@ class NodeScheduler:
                 await asyncio.wait_for(self._wake.wait(), timeout=SWEEP_INTERVAL_S)
             self._wake.clear()
             self._expire_pending()
+            if not self.healthy:
+                continue
             while self._pending and len(self._active) < self.node.max_inflight:
+                now = time.monotonic()
+                if (
+                    now >= self._pending[0].deadline
+                    or now - (self._pending[0].attempt_enqueued_at or self._pending[0].enqueued_at)
+                    >= self._queue_timeout_s
+                ):
+                    self._expire_pending()
+                    continue
                 self._start(self._pending.popleft())
 
     def _expire_pending(self) -> None:
@@ -163,6 +175,8 @@ class NodeScheduler:
             self.stats.observe_service(job.service_ms() / 1000.0)
         except JobError as err:
             self._fail(job, err.code, err.message)
+        except httpx.HTTPError:
+            self._fail(job, "backend_transport_error", "falha de transporte com o nó")
         except TimeoutError:
             self._fail(job, "deadline_exceeded", "prazo total da requisição excedido")
         except asyncio.CancelledError:
@@ -236,6 +250,7 @@ class NodeScheduler:
                 "done",
                 {
                     "finish_reason": finish,
+                    "request_id": job.request_id,
                     "completion_tokens": job.completion_tokens,
                     "tokens_source": job.tokens_source or "unknown",
                 },
@@ -247,6 +262,10 @@ class NodeScheduler:
             if remaining <= 0:
                 raise JobError("client_too_slow", "cliente não consumiu a saída no prazo")
             await asyncio.sleep(min(0.01, remaining))
+        # Publish terminal state in the same non-awaiting turn as its events so
+        # disconnect/deadline cannot cancel a job after a public `done` escaped.
+        job.finished_at = time.monotonic()
+        job.state = JobState.DONE
         for event in terminal:
             job.events.put_nowait(event)
 
@@ -257,7 +276,7 @@ class NodeScheduler:
             raise JobError("client_too_slow", "cliente não consumiu a saída no prazo") from err
 
     def _fail(self, job: Job, code: str, message: str) -> None:
-        if code in {"backend_unavailable", "backend_timeout", "incomplete_stream"}:
+        if code in {"backend_unavailable", "backend_timeout", "backend_transport_error"}:
             self.healthy = False
             self.last_failure = code
         job.state = JobState.FAILED

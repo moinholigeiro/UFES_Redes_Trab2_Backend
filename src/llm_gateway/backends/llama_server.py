@@ -109,6 +109,10 @@ class LlamaServerBackend:
             raise JobError("backend_unavailable", f"nó {self._node.name} inacessível") from err
         except httpx.TimeoutException as err:
             raise JobError("backend_timeout", f"nó {self._node.name} sem resposta no prazo") from err
-        except (httpx.HTTPError, json.JSONDecodeError, UnicodeDecodeError) as err:
-            raise JobError("backend_error", f"falha de transporte com o nó {self._node.name}") from err
+        except httpx.HTTPError as err:
+            raise JobError(
+                "backend_transport_error", f"falha de transporte com o nó {self._node.name}"
+            ) from err
+        except (json.JSONDecodeError, UnicodeDecodeError) as err:
+            raise JobError("backend_protocol_error", f"resposta inválida do nó {self._node.name}") from err
         yield Finish(finish, usage)

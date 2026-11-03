@@ -1,7 +1,7 @@
 # Projeto 1 — Gateway distribuído de LLMs abertos
 
 **Disciplina:** Redes de Computadores · **UFES**
-**Estado conservador:** núcleo e pilotos M2 existem, mas os marcos acadêmicos não estão concluídos. A suíte atual do Backend passou 94 testes; avaliações controladas, reprodução de falhas reais após as correções, frontend e M3 seguem pendentes. Não tratar smoke ou teste unitário como benchmark ou validação clínica.
+**Estado conservador:** núcleo e pilotos M2 existem, mas os marcos acadêmicos não estão concluídos. Consulte os testes atuais com `devenv shell -- python -m pytest`; testes simulados não são avaliação controlada, runtime real, benchmark ou validação clínica.
 
 Gateway que recebe requisições de vários clientes, enfileira por nó e encaminha, em streaming SSE, para runtimes locais de inferência (`llama-server`/llama.cpp). Os domínios são extração estruturada de prontuários sintéticos e um assistente da disciplina de Redes.
 
@@ -20,10 +20,10 @@ Plano atualizado de revisão, correções, atividades pendentes e separação em
 | Extração de prontuário com JSON Schema (geração restrita) e validação ao fim | **Implementado** (schema v1); **qualidade não avaliada** (F3) |
 | Fila explícita por nó: `max_inflight`, `max_queue`, expiração, cancelamento, 503 `queue_full` | **Implementado** e testado |
 | Cancelamento por desconexão do cliente libera o slot; cliente lento é cortado | **Implementado** e testado |
-| Falha durante o stream → `error` com `partial=true`, sem `done` | **Implementado** e **verificado com a morte real do runtime** |
+| Falha durante o stream → `error` com `partial=true`, sem `done` | **Implementado**; regressões automatizadas simuladas. A validação anterior com runtime real é evidência histórica, não prova da revisão atual |
 | Tempos de fila/serviço e log JSONL por requisição | **Piloto implementado**; medir TTFT/end-to-end integral e fonte correta de tokens continua pendente. Chunks SSE não são tokens; sem usage válido, tokens/s fica indefinido |
 | Balanceamento: round-robin, menor fila, menor latência (EWMA) | **Implementado**; políticas têm testes unitários e o perfil `m2_replicas.toml` fornece réplicas equivalentes |
-| Falha de backend | **Implementada**: retira nó indisponível, tenta uma réplica compatível uma vez antes do primeiro delta; mid-stream termina com erro parcial. Ambos verificados com runtime real |
+| Falha de backend | **Implementada**: retry automático restrito a falhas transitórias elegíveis e antes do primeiro delta; regressões automatizadas simuladas. Ainda falta validar novamente com runtime real |
 | Segurança: token, autorização por domínio, rate limit e TLS | **Implementada** no perfil M2; inclui token provisionado por CLI, `/metrics` restrito e CA validada pelo cliente |
 | Roteamento `auto` e escolha pequeno/maior | **Implementado como piloto**: TF-IDF + regressão logística, 120 exemplos sintéticos e split agrupado. A acurácia do conjunto pequeno não representa generalização |
 | Comparação quantitativa RR × menor fila × menor latência sob carga real | **Pendente**; implementação e configuração existem, falta executar matriz controlada |
@@ -35,7 +35,11 @@ Plano atualizado de revisão, correções, atividades pendentes e separação em
 Tudo fica em `.devenv/` e no venv do projeto. Nada é instalado globalmente.
 
 - [`devenv.yaml`](devenv.yaml) e [`devenv.nix`](devenv.nix): nixpkgs-unstable (travado em [`devenv.lock`](devenv.lock)), Python 3.13 e utilitários do gateway. Runtime llama.cpp está no repositório LLM.
-- [`pyproject.toml`](pyproject.toml): dependências Python (FastAPI, uvicorn, httpx, pydantic, scikit-learn) e de desenvolvimento (pytest, ruff), instaladas no venv em modo editável.
+- [`pyproject.toml`](pyproject.toml): dependências Python de runtime (FastAPI, uvicorn, httpx, pydantic, NumPy, scikit-learn) e extras de desenvolvimento (pytest, ruff), instaladas no venv em modo editável.
+
+CORS fica desativado por padrão. Para servir o Frontend em outra origem, configure `gateway.cors_origins` com origens HTTPS exatas (por exemplo, `https://app.exemplo.edu`), sem caminho ou wildcard; HTTP só é aceito para loopback de desenvolvimento. A lista é allowlist explícita e só libera os métodos/headers usados pelo cliente. Perfis de produção/segurança mantêm a lista vazia: configure-a no arquivo local de implantação quando browser e API estiverem em origens distintas; prefira proxy de mesma origem quando possível.
+
+Para verificar a cópia do contrato SSE público no Frontend, execute `scripts/check-public-contract.sh [caminho-frontend]`.
 
 ```bash
 devenv shell          # entra no ambiente (cria o venv na primeira vez)
@@ -51,10 +55,10 @@ Baixar/verificar pesos é uma operação local opt-in no repositório LLM; os te
 
 ## Como executar (perfil mínimo de CPU)
 
-Cada nó remoto é iniciado no host dele via `scripts/start-node` do repositório LLM, normalmente com **um slot**. Inicie os nós remotos e depois o gateway:
+O perfil `cpu_minimal.toml` é para desenvolvimento controlado com HTTP interno em loopback; não use em rede não confiável. Perfis LLM `*-dev-http.toml` no mesmo host correspondem a esses endpoints. Para deployment seguro, utilize perfis `m2_*` HTTPS, hosts/DNS `llm-small-a`, `llm-small-b`, `llm-large-a`, SANs correspondentes e CA/trust por nó, conforme acima. Cada nó é iniciado no host dele via `scripts/start-node`, normalmente com **um slot**. Inicie os nós e depois o gateway:
 
 ```bash
-# host gateway — não exige GGUF/llama-server
+# host gateway — não exige GGUF/llama-server; nós HTTP somente em loopback
 llm-gateway serve --config configs/cpu_minimal.toml
 ```
 
@@ -68,16 +72,18 @@ curl -s localhost:8080/metrics | jq .      # fila, ativos, concluídos, falhas, 
 
 O cliente imprime o texto progressivamente e, ao final, TTFT e latência medidos no cliente, em JSON na saída de erro. Com `--json`, imprime o relatório completo (metadados, `result`, `done`, `error`).
 
-Os dois runtimes do perfil mínimo ocuparam cerca de **6,3 GiB de RSS agregado** na medição local. `RSS` não equivale à memória física exclusiva, pois GGUF usa mmap. Ajuste `threads`, `ctx_size` e `max_inflight` para sua máquina.
+Os dois runtimes do perfil mínimo ocuparam cerca de **6,3 GiB de RSS agregado** em uma medição local histórica. `RSS` não equivale à memória física exclusiva, pois GGUF usa mmap; essa medição não demonstra que os perfis atuais cabem no alvo de 8 GB. Ajuste `threads`, `context_tokens` e `max_inflight` para sua máquina e valide novamente.
 
 ## Perfil M2: segurança, inteligência e réplicas
 
-O perfil `configs/m2_secure.toml` habilita TLS obrigatório, token Bearer, autorização por domínio, rate limit, roteamento semântico e escolha de tamanho de modelo. O modelo pequeno atende ambos os domínios com o schema clínico obrigatório; o padrão do domínio continua distinto (`redes` pequeno, `prontuario` maior). **Não exponha credenciais nem a CA local.**
+O perfil `configs/m2_secure.toml` habilita TLS obrigatório, token Bearer, autorização por domínio, rate limit, roteamento semântico e escolha de tamanho de modelo. O modelo pequeno atende ambos os domínios com o schema clínico obrigatório; o padrão do domínio continua distinto (`redes` pequeno, `prontuario` maior). Backend ↔ nó LLM usa HTTPS e `backend_ca_file = secrets/llm-nodes-ca.pem`; essa CA deve validar os certificados com SAN correto provisionados no host LLM (consulte `../UFES_Redes_Trab2_LLM/scripts/create-node-cert.sh`). O perfil mínimo usa HTTP apenas em loopback para desenvolvimento. **Não exponha credenciais nem a CA local.**
 
 Prepare o certificado e crie um token (o comando mostra o segredo uma única vez; o arquivo contém apenas seu SHA-256 e tem modo `0600`):
 
 ```bash
-scripts/generate-local-ca.sh
+scripts/generate-local-ca.sh artifacts/tls DNS:llm-small-a,DNS:llm-small-b,DNS:llm-large-a
+# Em cada host LLM, gere chave/certificado com SAN DNS idêntico ao endereço da config Backend.
+# Agregue somente os certificados públicos dos nós em secrets/llm-nodes-ca.pem.
 llm-gateway token-create \
   --users-file secrets/users.toml \
   --username integrante-a \
@@ -124,7 +130,7 @@ Campos extras (`model`, `prompt`, `schema`, `system`) são rejeitados com 422. O
 | `meta` | `request_id`, domínio pedido/resolvido, `model`, `node`, hash de prompt, schema, fila, tentativa e confiança do roteador |
 | `delta` | `seq`, `text`: trecho gerado, enviado assim que chega. Não é necessariamente um token |
 | `result` | `schema`, `data`: só em `prontuario`, após validação do JSON completo |
-| `done` | `finish_reason`, `completion_tokens`, `tokens_source` (`backend_usage` ou `deltas`) |
+| `done` | mesmo `request_id` do header/meta, `finish_reason`, `completion_tokens`, `tokens_source` (`backend_usage` ou `unknown`) |
 | `error` | `code`, `message`, `partial` (já houve delta), `retryable` |
 
 Comentários `: keepalive` são enviados durante a espera na fila. Não são tokens e não contam como TTFT.
@@ -141,16 +147,17 @@ Definições:
 
 - **TTFT gateway:** admissão → primeiro delta do backend. **TTFT cliente:** envio → primeiro delta não vazio recebido.
 - **Tokens/s de decodificação:** `(n−1)/(t_último − t_primeiro)`, com `n` = tokens reportados pelo runtime (`backend_usage`). Indefinido se `n<2`.
-- Se o runtime não informar `usage`, `tokens_source=deltas`: o número é de deltas, não de tokens.
+- Se o runtime não informar `usage`, `completion_tokens=null` e `tokens_source=unknown`; contagem de deltas nunca é anunciada como tokens.
 
 ## Testes
 
 ```bash
-devenv shell -- pytest          # 81 testes; backends simulados/MockTransport, mais TLS local; sem baixar modelos
+devenv shell -- python -m pytest -q -p no:cacheprovider --basetemp=/tmp/opencode/projeto-redes-pytest  # Backend; backends simulados/MockTransport e TLS local; sem baixar modelos
+scripts/check-public-contract.sh # compara a cópia no Frontend
 devenv shell -- ruff check src tests
 ```
 
-Cobertura atual: validação de configuração; protocolo SSE; schema; escalonador; backends; API e cancelamento; auth 401, autorização 403, rate limit 429; TLS com CA válida e não confiável; roteamento e baixa confiança; bypass de autorização por `auto`; balanceadores e fallback em réplica antes do primeiro delta; falha após delta sem concatenação.
+Cobertura atual: validação de configuração; protocolo SSE; schema; escalonador; backends; API e cancelamento; auth 401, autorização 403, rate limit 429; TLS com CA válida e não confiável; roteamento e baixa confiança; bypass de autorização por `auto`; balanceadores e fallback em réplica antes do primeiro delta; falha após delta sem concatenação. A suíte não prova ainda a política de probes/readiness em servidor HTTP de runtime real.
 
 Os testes não substituem medições com LLM real. Eles validam o comportamento de filas, SSE e falhas.
 
@@ -163,10 +170,10 @@ Execuções únicas feitas durante a implementação, para verificar o caminho p
 | Redes, Qwen3 1.7B, pergunta curta | 30 tokens; TTFT cliente ~3,0 s (inclui prefill do prompt de sistema); geração ~10,7 tok/s |
 | Prontuário, Qwen3.5 4B, texto sintético de ~420 caracteres | 250 tokens de saída; `result` válido; ~68 s de serviço; TTFT cliente ~0,6 s em execução já aquecida |
 | Três clientes simultâneos em Redes (1 slot) | Profundidade de fila na admissão 0, 1, 2; espera na fila ~0, 5,8 e 11,6 s, consistente com o serviço anterior (FIFO serial) |
-| Morte do runtime de Redes durante o stream (118 deltas recebidos) | Cliente: `error` `backend_error`, `partial=true`, `retryable=true`, sem `done`. Log: `partial_output_discarded=true` |
+| Morte do runtime de Redes durante o stream (118 deltas recebidos, histórico) | Cliente: `error` `backend_error`, `partial=true`, `retryable=true`, sem `done`. Log: `partial_output_discarded=true`; comportamento da versão atual precisa de nova validação real |
 | TLS M2 | CA local validada pelo cliente; cliente sem a CA rejeitado; métricas autenticadas, domínio não autorizado recebeu 403 |
-| Failover em runtime real (duas instâncias Qwen3 equivalentes) | Nó 1 indisponível antes da geração; retry no nó 2, `attempt_nodes=[redes-1, redes-2]`; resposta completou |
-| Queda real de Qwen3.5 durante geração | Cliente recebeu `backend_error`, `partial=true`, sem `done`; não concatenou outra resposta |
+| Failover em runtime real (histórico; duas instâncias Qwen3 equivalentes) | Nó 1 indisponível antes da geração; retry no nó 2, `attempt_nodes=[redes-1, redes-2]`; resposta completou |
+| Queda real de Qwen3.5 durante geração (histórico) | Cliente recebeu `backend_error`, `partial=true`, sem `done`; não concatenou outra resposta. Política atual limita failover automático a antes do primeiro delta |
 | Roteamento semântico real | Pedido simples de Redes → Qwen3 1.7B; pedido simples clínico → schema JSON no Qwen3 1.7B; pedido complexo → Qwen3.5 4B |
 
 Observações registradas para as fases seguintes:

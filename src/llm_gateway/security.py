@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import math
 import secrets
 import time
 import tomllib
@@ -169,7 +170,7 @@ def write_credential_file(
         raise ValueError("username aceita apenas letras, números, ponto, hífen e underscore")
     if not allowed_domains or len(set(allowed_domains)) != len(allowed_domains):
         raise ValueError("informe domínios permitidos únicos")
-    if requests_per_minute <= 0 or burst < 1:
+    if not math.isfinite(requests_per_minute) or requests_per_minute <= 0 or burst < 1:
         raise ValueError("rate e burst devem ser positivos")
 
     current: dict[str, Any] = {"users": {}}

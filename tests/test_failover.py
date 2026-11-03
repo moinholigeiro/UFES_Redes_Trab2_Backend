@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 
 import httpx
+import pytest
 
 from llm_gateway.protocol import iter_sse
 
@@ -125,3 +126,27 @@ def test_failover_can_be_disabled_by_config(serve):
     assert [name for name, _ in events] == ["meta", "error"]
     assert events[0][1]["node"] == "redes-a"
     assert events[0][1]["attempt"] == 1
+
+
+def test_expired_request_is_not_retried_on_compatible_replica(serve):
+    raw = replicas_config()
+    raw["gateway"]["request_deadline_s"] = 0.01
+    raw["gateway"]["request_body_timeout_s"] = 0.01
+    raw["nodes"][0]["simulation"]["startup_delay_s"] = 0.05
+    server = serve(raw)
+    with post_stream(server.url) as response:
+        events = list(iter_sse(response.iter_lines()))
+
+    assert events[-1][0] == "error"
+    assert events[-1][1]["code"] == "deadline_exceeded"
+    assert events[0][1]["attempt"] == 1
+    assert events[0][1]["attempt_nodes"] == ["redes-a"]
+
+
+@pytest.mark.parametrize(
+    "code", ["queue_timeout", "deadline_exceeded", "schema_invalid", "incomplete_stream"]
+)
+def test_non_transient_errors_are_not_eligible_for_automatic_failover(code):
+    from llm_gateway.jobs import FAILOVER_CODES
+
+    assert code not in FAILOVER_CODES

@@ -36,6 +36,12 @@ def test_generate_request_rejects_client_overrides():
         GenerateRequest.model_validate({"domain": "redes", "input": ""})
 
 
+@pytest.mark.parametrize("value", [True, "12", 0])
+def test_generate_request_rejects_coerced_or_invalid_output_token_count(value):
+    with pytest.raises(ValidationError):
+        GenerateRequest.model_validate({"domain": "redes", "input": "oi", "max_output_tokens": value})
+
+
 def test_schema_forbids_additional_properties_and_requires_all_fields():
     schema = json_schema_for("prontuario-v1")
     assert schema["additionalProperties"] is False

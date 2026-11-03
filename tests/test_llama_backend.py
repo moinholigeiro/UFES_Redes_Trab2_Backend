@@ -16,7 +16,7 @@ from llm_gateway.config import NodeConfig
 from llm_gateway.jobs import Job, JobError
 
 PRONT_NODE = NodeConfig(
-    name="pront", kind="llama_server", url="http://nó.test:8102", model="m", chat_template_kwargs={}
+    name="pront", kind="llama_server", url="https://nó.test:8102", model="m", chat_template_kwargs={}
 )
 
 

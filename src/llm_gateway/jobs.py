@@ -24,6 +24,7 @@ RETRYABLE_CODES = frozenset(
     {
         "backend_unavailable",
         "backend_timeout",
+        "backend_transport_error",
         "backend_error",
         "incomplete_stream",
         "schema_invalid",
@@ -31,6 +32,10 @@ RETRYABLE_CODES = frozenset(
         "deadline_exceeded",
     }
 )
+
+# Automatic failover is intentionally narrower than the client's manual retry
+# advice: schema/protocol/deadline/queue failures must not replay generation.
+FAILOVER_CODES = frozenset({"backend_unavailable", "backend_timeout", "backend_transport_error"})
 
 
 class JobError(Exception):

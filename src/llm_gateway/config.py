@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import ipaddress
+import math
 import tomllib
 from pathlib import Path
 from typing import Any, Literal
+from urllib.parse import urlsplit
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -29,16 +32,66 @@ class GatewayConfig(_Strict):
     backend_read_timeout_s: float = Field(60.0, gt=0)
     health_check_interval_s: float = Field(2.0, gt=0)
     health_check_timeout_s: float = Field(1.0, gt=0)
-    event_buffer_size: int = Field(64, ge=1)
+    event_buffer_size: int = Field(64, ge=2, le=65_536)
     heartbeat_interval_s: float = Field(15.0, gt=0)
     metrics_log: Path | None = Path("artifacts/logs/requests.jsonl")
     allow_simulated_backends: bool = False
     tls_certfile: Path | None = None
     tls_keyfile: Path | None = None
     backend_ca_file: Path | None = None
+    cors_origins: list[str] = Field(default_factory=list)
+    max_auth_header_bytes: int = Field(8192, ge=128, le=65_536)
+
+    @model_validator(mode="after")
+    def _cors_origins_are_origins(self) -> GatewayConfig:
+        for origin in self.cors_origins:
+            parsed = urlsplit(origin)
+            try:
+                port = parsed.port  # Also rejects malformed/out-of-range ports.
+            except ValueError as exc:
+                raise ValueError("porta inválida em CORS origin") from exc
+            del port
+            is_local_http = parsed.scheme == "http" and parsed.hostname in {"localhost", "127.0.0.1", "::1"}
+            if parsed.scheme != "https" and not is_local_http:
+                raise ValueError("CORS origins devem ser HTTPS (HTTP só é permitido para loopback local)")
+            if (
+                not parsed.hostname
+                or parsed.username is not None
+                or parsed.password is not None
+                or parsed.path
+                or parsed.query
+                or parsed.fragment
+                or "*" in origin
+                or origin != f"{parsed.scheme}://{parsed.netloc}"
+            ):
+                raise ValueError(
+                    "CORS origin deve conter scheme, host e porta opcionais; wildcard não é permitido"
+                )
+        if len(set(self.cors_origins)) != len(self.cors_origins):
+            raise ValueError("CORS origins não podem conter duplicatas")
+        return self
 
     @model_validator(mode="after")
     def _tls_pair(self) -> GatewayConfig:
+        for name in (
+            "request_body_timeout_s",
+            "request_deadline_s",
+            "queue_timeout_s",
+            "client_stall_timeout_s",
+            "backend_read_timeout_s",
+            "health_check_interval_s",
+            "health_check_timeout_s",
+            "heartbeat_interval_s",
+        ):
+            value = getattr(self, name)
+            if not math.isfinite(value):
+                raise ValueError(f"gateway.{name} deve ser finito")
+        if self.health_check_timeout_s > self.health_check_interval_s:
+            raise ValueError("health_check_timeout_s não pode exceder health_check_interval_s")
+        if self.request_body_timeout_s > self.request_deadline_s:
+            raise ValueError("request_body_timeout_s não pode exceder request_deadline_s")
+        if not 2 <= self.event_buffer_size <= 65_536:
+            raise ValueError("event_buffer_size deve estar entre 2 e 65536")
         if (self.tls_certfile is None) != (self.tls_keyfile is None):
             raise ValueError("tls_certfile e tls_keyfile devem ser informados juntos")
         return self
@@ -48,6 +101,16 @@ class SecurityConfig(_Strict):
     enabled: bool = False
     users_file: Path | None = None
     require_tls: bool = False
+    requests_per_minute: float = Field(60.0, gt=0)
+    burst: int = Field(10, ge=1)
+
+    @model_validator(mode="after")
+    def _finite_rates(self) -> SecurityConfig:
+        if not math.isfinite(self.requests_per_minute):
+            raise ValueError("security.requests_per_minute deve ser finito")
+        if self.enabled and (self.requests_per_minute <= 0 or self.burst < 1):
+            raise ValueError("security rate/burst devem ser positivos e finitos")
+        return self
 
     @model_validator(mode="after")
     def _check(self) -> SecurityConfig:
@@ -147,6 +210,29 @@ class NodeConfig(_Strict):
         if self.kind == "llama_server":
             if not self.url or not self.url.startswith(("http://", "https://")):
                 raise ValueError("nó llama_server exige url http(s)")
+            parsed = urlsplit(self.url)
+            try:
+                port = parsed.port
+            except ValueError as exc:
+                raise ValueError("porta inválida na URL do nó") from exc
+            del port
+            if (
+                not parsed.hostname
+                or parsed.username is not None
+                or parsed.password is not None
+                or parsed.query
+                or parsed.fragment
+                or parsed.path not in {"", "/"}
+            ):
+                raise ValueError("URL do nó deve conter apenas scheme, host e porta")
+            loopback = parsed.hostname == "localhost"
+            if not loopback:
+                try:
+                    loopback = ipaddress.ip_address(parsed.hostname).is_loopback
+                except ValueError:
+                    loopback = False
+            if parsed.scheme == "http" and not loopback:
+                raise ValueError("HTTP interno só é permitido para nó loopback; use HTTPS remoto")
             if self.simulation is not None:
                 raise ValueError("simulation só existe em nó simulated")
         else:
@@ -174,6 +260,13 @@ class AppConfig(_Strict):
         for node in self.nodes:
             if node.model not in self.models:
                 raise ValueError(f"nó {node.name!r} usa modelo não declarado: {node.model!r}")
+            if (
+                node.kind == "llama_server"
+                and node.url
+                and node.url.startswith("https://")
+                and self.gateway.backend_ca_file is None
+            ):
+                raise ValueError("nós HTTPS exigem gateway.backend_ca_file com trust bundle")
             if node.kind == "simulated" and not self.gateway.allow_simulated_backends:
                 raise ValueError(
                     f"nó {node.name!r} é simulado; habilite gateway.allow_simulated_backends só para testes"

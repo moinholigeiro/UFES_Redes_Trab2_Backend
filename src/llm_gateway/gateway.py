@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import asyncio
+import time
 from typing import Any
 
 from .backends.base import Backend
 from .balancing import Balancer
 from .config import AppConfig
-from .jobs import Job
+from .jobs import FAILOVER_CODES, Job
 from .metrics import RequestLog
 from .scheduler import NodeScheduler, Overloaded
 
@@ -67,7 +68,13 @@ class Gateway:
         A chamada deve ocorrer depois que a task da tentativa anterior terminou,
         para que o slot e o log daquela tentativa já estejam liberados/gravados.
         """
-        if job.delta_count or job.attempt > self.config.balancing.max_failover_attempts:
+        if (
+            job.delta_count
+            or job.error_code not in FAILOVER_CODES
+            or job.finished_at is None
+            or time.monotonic() >= job.deadline
+            or job.attempt > self.config.balancing.max_failover_attempts
+        ):
             return False
         attempted = set(job.attempt_nodes)
         candidates = [
@@ -76,10 +83,12 @@ class Gateway:
             if s.healthy and s.name not in attempted and s.node.model == job.model
         ]
         for sched in self.balancer.order(job.domain, candidates):
-            while not job.events.empty():
-                job.events.get_nowait()
+            if time.monotonic() >= job.deadline:
+                return False
             try:
                 sched.admit(job)
+                while not job.events.empty():
+                    job.events.get_nowait()
                 job.error_code = None
                 job.cancel_reason = None
                 job.finish_reason = None

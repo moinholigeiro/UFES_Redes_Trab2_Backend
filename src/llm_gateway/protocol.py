@@ -26,7 +26,7 @@ class GenerateRequest(BaseModel):
 
     domain: str = Field(min_length=1, max_length=64)
     input: str = Field(min_length=1)
-    max_output_tokens: int | None = Field(default=None, ge=1)
+    max_output_tokens: int | None = Field(default=None, ge=1, strict=True)
 
 
 def sse_encode(event: str, data: dict[str, Any]) -> str:

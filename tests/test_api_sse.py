@@ -46,6 +46,69 @@ def test_health_domains_and_metrics_expose_no_prompts(serve):
         assert "Regras:" not in blob
         metrics = client.get("/metrics").json()
         assert set(metrics["nodes"]) == {"redes-1", "prontuario-1"}
+        readiness = client.get("/ready")
+        assert readiness.status_code == 200
+        assert readiness.json()["status"] == "ready"
+
+
+def test_health_probe_connect_error_marks_node_unhealthy_on_startup(serve):
+    raw = sim_config_dict(
+        nodes=[
+            {
+                "name": "unavailable",
+                "kind": "llama_server",
+                "url": "http://127.0.0.1:1",
+                "model": "sim-small",
+            },
+            sim_config_dict()["nodes"][1],
+        ]
+    )
+    server = serve(raw)
+    with httpx.Client(base_url=server.url) as client:
+        metrics = client.get("/metrics").json()
+        response = client.post("/v1/generate", json={"domain": "redes", "input": "oi"})
+
+    assert metrics["nodes"]["unavailable"]["healthy"] is False
+    assert response.status_code == 503
+    assert response.json()["error"]["code"] == "no_healthy_nodes"
+
+
+def test_cors_requires_explicit_https_origin_and_allows_frontend_preflight(serve):
+    server = serve(sim_config_dict(gateway={"cors_origins": ["https://frontend.example"]}))
+    with httpx.Client(base_url=server.url) as client:
+        allowed = client.options(
+            "/v1/generate",
+            headers={
+                "Origin": "https://frontend.example",
+                "Access-Control-Request-Method": "POST",
+                "Access-Control-Request-Headers": "authorization,content-type",
+            },
+        )
+        assert allowed.status_code == 200
+        assert allowed.headers["access-control-allow-origin"] == "https://frontend.example"
+        assert "authorization" in allowed.headers["access-control-allow-headers"].lower()
+
+        denied = client.options(
+            "/v1/generate",
+            headers={
+                "Origin": "https://untrusted.example",
+                "Access-Control-Request-Method": "POST",
+                "Access-Control-Request-Headers": "authorization,content-type",
+            },
+        )
+        assert "access-control-allow-origin" not in denied.headers
+
+        with client.stream(
+            "POST",
+            "/v1/generate",
+            json={"domain": "redes", "input": "oi"},
+            headers={"Origin": "https://frontend.example", "Accept": "text/event-stream"},
+        ) as response:
+            assert response.status_code == 200
+            assert "x-request-id" in response.headers
+            assert "x-request-id" in response.headers["access-control-expose-headers"].lower()
+            assert response.headers["x-request-id"]
+            list(response.iter_lines())
 
 
 def test_text_stream_is_progressive_ordered_and_unicode_preserving(serve):
@@ -90,6 +153,7 @@ def test_text_stream_is_progressive_ordered_and_unicode_preserving(serve):
 
     done = events[-1][1]
     assert done == {
+        "request_id": events[0][1]["request_id"],
         "finish_reason": "stop",
         "completion_tokens": None,
         "tokens_source": "unknown",

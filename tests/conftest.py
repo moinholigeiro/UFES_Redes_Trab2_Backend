@@ -125,6 +125,8 @@ class ServerThread:
             port=port,
             log_level="warning",
             lifespan="on",
+            proxy_headers=False,
+            forwarded_allow_ips="",
             ssl_certfile=str(ssl_certfile) if ssl_certfile else None,
             ssl_keyfile=str(ssl_keyfile) if ssl_keyfile else None,
         )

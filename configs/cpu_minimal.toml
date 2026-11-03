@@ -1,9 +1,11 @@
-# Perfil mínimo de CPU (Ubuntu ~8 GB RAM, 4 núcleos). Caminhos são relativos à raiz do repositório.
+# Perfil mínimo de CPU (Ubuntu ~8 GB RAM, 4 núcleos). Desenvolvimento controlado:
+# HTTP entre processos somente em loopback; use apenas nesta configuração.
 # Dois domínios com modelos distintos, um nó (runtime) por modelo, um slot ativo por nó.
 
 [gateway]
 host = "127.0.0.1"
 port = 8080
+cors_origins = ["http://localhost:5173", "http://127.0.0.1:5173"]
 max_request_bytes = 65536
 max_input_chars = 8000
 max_output_tokens_limit = 1024
