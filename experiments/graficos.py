@@ -132,7 +132,8 @@ def desenhar(pasta: Path, linhas: list[dict[str, str]], resumo: dict, prev: dict
     import matplotlib.pyplot as plt
 
     gerados: list[Path] = []
-    series = sorted({(k, pol) for (k, pol, _) in resumo})
+    # O desafio (um N só, pedidos mistos) tem gráfico próprio: fica fora das curvas por N.
+    series = sorted({(k, pol) for (k, pol, _) in resumo if "desafio" not in str(k)})
     fig, ax = plt.subplots(figsize=(7, 4.5))
     for k, politica in series:
         pts = sorted((n, r) for (kk, pp, n), r in resumo.items() if (kk, pp) == (k, politica))
