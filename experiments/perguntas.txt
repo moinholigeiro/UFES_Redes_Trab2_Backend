@@ -1,0 +1,23 @@
+# Perguntas do experimento (domínio redes). Uma por linha; linhas com # são ignoradas.
+# Todas pedem respostas longas: com max_output_tokens fixo, cada pedido gera o mesmo número de
+# tokens e o tempo de serviço S fica estável, como o modelo de fila supõe.
+Explique em detalhes como funciona o three-way handshake do TCP e por que são necessários três passos.
+Explique em detalhes a diferença entre atraso de transmissão e atraso de propagação, com exemplos.
+Descreva em detalhes como funciona o controle de congestionamento do TCP Reno.
+Explique em detalhes como o DNS resolve um nome, citando servidores raiz, TLD e autoritativos.
+Explique em detalhes a diferença entre HTTP persistente e não persistente.
+Descreva em detalhes como funciona a comutação de pacotes com store-and-forward.
+Explique em detalhes o que é multiplexação estatística e por que ela permite mais usuários.
+Explique em detalhes como funciona o protocolo Go-Back-N.
+Explique em detalhes como funciona a repetição seletiva na transferência confiável de dados.
+Descreva em detalhes o modelo de camadas da Internet e o que cada camada faz.
+Explique em detalhes como um cache web reduz o tráfego no enlace de acesso.
+Explique em detalhes a diferença entre TCP e UDP e quando usar cada um.
+Descreva em detalhes como funciona o controle de fluxo do TCP.
+Explique em detalhes o que é intensidade de tráfego e o que acontece quando ela se aproxima de 1.
+Explique em detalhes como funciona a distribuição de arquivos em uma rede P2P como o BitTorrent.
+Descreva em detalhes como funciona o NAT e por que ele é usado.
+Explique em detalhes o que são sockets e como um servidor TCP atende vários clientes.
+Explique em detalhes como funciona o Server-Sent Events e como ele se compara ao WebSocket.
+Descreva em detalhes os quatro componentes do atraso nodal.
+Explique em detalhes como funciona o algoritmo de roteamento de estado de enlace.

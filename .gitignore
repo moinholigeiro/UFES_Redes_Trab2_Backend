@@ -44,3 +44,7 @@ __pycache__/
 .ruff_cache/
 build/
 dist/
+
+# lab.py: estado local (token, chave, TLS, logs) e ensaios simulados
+.lab/
+experiments/resultados/*_simulado/
