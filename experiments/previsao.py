@@ -28,7 +28,10 @@ from pathlib import Path
 
 def calibrar(caminho: Path) -> dict[str, float]:
     with caminho.open(encoding="utf-8") as fh:
-        linhas = [linha for linha in csv.DictReader(fh) if linha["status"] == "ok"]
+        linhas = [
+            linha for linha in csv.DictReader(fh)
+            if linha["status"] == "ok" and linha.get("transiente") != "True"
+        ]
     if not linhas:
         raise SystemExit(f"calibração sem pedidos concluídos: {caminho}")
     ttfts = [float(linha["ttft_ms"]) for linha in linhas if linha["ttft_ms"]]

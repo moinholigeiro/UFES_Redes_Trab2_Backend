@@ -4,6 +4,12 @@ Laço fechado: cada um dos N clientes manda um pedido, espera o evento terminal 
 e manda o próximo na hora, sem pausa. É o modelo da lei de Little usado na previsão
 (experiments/previsao.py): com N clientes sempre ocupados, a fila do nó tem N − K pedidos esperando.
 
+Regime estável: os N clientes começam juntos, e a primeira leva tem esperas de 0 a (N−1)·S,
+diferentes das do regime estável (≈ (N/K − 1)·S). Por isso os primeiros `--descartar` pedidos
+concluídos (padrão: N) são marcados `transiente=True` e não contam para a meta `--pedidos` nem
+para os gráficos. Sem isso, com poucos pedidos por execução, só os que esperaram pouco chegam a
+concluir, e o TTFT medido fica abaixo do real (viés achado no ensaio de 09/11).
+
 Cada pedido vira uma linha no CSV, com os tempos medidos **no cliente**:
 - ttft_ms: do envio do POST até o primeiro `delta` (inclui a espera na fila);
 - e2e_ms: do envio até o evento terminal;
@@ -49,6 +55,7 @@ class Amostra:
     tokens: int | None
     trechos: int
     inicio_s: float  # instante do envio, relativo ao começo da medição
+    transiente: bool = False  # primeira leva (fora do regime estável): não entra nos gráficos
 
 
 def ler_perguntas(caminho: Path) -> list[str]:
@@ -123,8 +130,14 @@ async def rodar(
     fracao_curtos: float,
     aquecimento: bool,
     semente: int,
+    descartar: int | None = None,
 ) -> tuple[list[Amostra], float]:
-    """Roda N clientes até `pedidos` pedidos concluírem com sucesso. Devolve amostras e duração (s)."""
+    """Roda N clientes até `pedidos` pedidos concluírem no regime estável. Devolve amostras e duração (s).
+
+    A duração conta do fim do transitório (o `descartar`-ésimo pedido concluído) até o último pedido da meta,
+    para que a vazão agregada também seja a do regime estável.
+    """
+    descartar = clientes if descartar is None else descartar
     rng = random.Random(semente)
     verify: bool | ssl.SSLContext = ssl.create_default_context(cafile=str(ca)) if ca else True
     headers = {"Accept": "text/event-stream"}
@@ -134,6 +147,8 @@ async def rodar(
     limits = httpx.Limits(max_connections=clientes + 2, max_keepalive_connections=clientes + 2)
     amostras: list[Amostra] = []
     concluidos = 0
+    transientes = 0
+    inicio_estavel: float | None = None
     parar = asyncio.Event()
     duracao = 0.0
 
@@ -153,7 +168,7 @@ async def rodar(
         t0 = time.perf_counter()
 
         async def cliente(indice: int) -> None:
-            nonlocal concluidos, duracao
+            nonlocal concluidos, transientes, inicio_estavel, duracao
             seq = 0
             while not parar.is_set():
                 corpo, classe, maximo = corpo_para(indice * 1000 + seq)
@@ -161,15 +176,22 @@ async def rodar(
                 if parar.is_set():
                     return  # pedido terminou depois da meta: fora da medição
                 status, erro, finish, no, tentativas, posicao, ttft, e2e, tokens, trechos, inicio = r
+                transiente = status == "ok" and transientes < descartar
                 amostras.append(
                     Amostra(indice, seq, classe, maximo, status, erro, finish, no, tentativas, posicao,
-                            ttft, e2e, tokens, trechos, inicio)
+                            ttft, e2e, tokens, trechos, inicio, transiente)
                 )
                 seq += 1
-                if status == "ok":
+                if transiente:
+                    transientes += 1
+                    if transientes == descartar:
+                        inicio_estavel = time.perf_counter()
+                elif status == "ok":
+                    if inicio_estavel is None:  # descartar = 0
+                        inicio_estavel = t0
                     concluidos += 1
                     if concluidos >= pedidos:
-                        duracao = time.perf_counter() - t0
+                        duracao = time.perf_counter() - inicio_estavel
                         parar.set()
                 elif len(amostras) >= pedidos * 3:
                     duracao = time.perf_counter() - t0
@@ -194,12 +216,13 @@ def gravar_csv(caminho: Path, amostras: list[Amostra], extras: dict[str, object]
 
 
 def resumo(amostras: list[Amostra], duracao: float) -> dict[str, float | int | None]:
-    ok = [a for a in amostras if a.status == "ok"]
+    ok = [a for a in amostras if a.status == "ok" and not a.transiente]
     ttfts = sorted(a.ttft_ms for a in ok if a.ttft_ms is not None)
     tokens = [a.tokens for a in ok if a.tokens is not None]
     return {
         "concluidos": len(ok),
-        "erros": len(amostras) - len(ok),
+        "transientes": sum(1 for a in amostras if a.transiente),
+        "erros": sum(1 for a in amostras if a.status != "ok"),
         "duracao_s": round(duracao, 3),
         "ttft_medio_ms": round(sum(ttfts) / len(ttfts), 1) if ttfts else None,
         "ttft_p95_ms": ttfts[min(len(ttfts) - 1, int(0.95 * len(ttfts)))] if ttfts else None,
@@ -221,6 +244,7 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--max-tokens-curto", type=int, default=32)
     p.add_argument("--fracao-curtos", type=float, default=0.0, help="0 = todos iguais; 0.5 = metade curtos")
     p.add_argument("--sem-aquecimento", action="store_true")
+    p.add_argument("--descartar", type=int, help="pedidos concluídos do transitório (padrão: N)")
     p.add_argument("--semente", type=int, default=1)
     p.add_argument("--saida", type=Path, required=True)
     p.add_argument("--rotulo", action="append", default=[], help="coluna extra no CSV, ex.: k=1")
@@ -232,6 +256,7 @@ def main(argv: list[str] | None = None) -> int:
             pedidos=args.pedidos, dominio=args.dominio, perguntas=ler_perguntas(args.perguntas),
             tokens_curto=args.max_tokens_curto, tokens_longo=args.max_tokens,
             fracao_curtos=args.fracao_curtos, aquecimento=not args.sem_aquecimento, semente=args.semente,
+            descartar=args.descartar,
         )
     )
     extras: dict[str, object] = {"clientes": args.clientes, "duracao_s": round(duracao, 4)}

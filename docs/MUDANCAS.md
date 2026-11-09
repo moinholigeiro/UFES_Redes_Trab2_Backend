@@ -172,7 +172,10 @@ Em `experiments/`:
 | `graficos.py` | TTFT e vazão × N, com IC 95% e a curva prevista; box plot do desafio; `resumo.md` |
 | `perguntas.txt` | 20 perguntas longas, para que todos os pedidos tenham o mesmo tamanho |
 
-Explicação completa em [experiments/README.md](../experiments/README.md).
+O `carga.py` descarta a primeira leva de N pedidos (o transitório). Sem isso, o ensaio mostrou um viés: com N = 16, o
+TTFT medido ficou em 6 s contra 16 s previstos, porque só os pedidos que esperaram pouco chegavam a concluir. Três
+testes cobrem as ferramentas (`tests/test_experimentos.py`). Explicação completa em
+[experiments/README.md](../experiments/README.md).
 
 ### 16. Tela (Frontend)
 
@@ -207,7 +210,7 @@ Explicação completa em [experiments/README.md](../experiments/README.md).
 
 | Verificação | Resultado |
 |---|---|
-| Suíte do Backend (Windows, Python 3.12) | 142 testes, todos passando; `ruff` sem avisos |
+| Suíte do Backend (Windows, Python 3.12) | 145 testes, todos passando; `ruff` sem avisos |
 | Suíte do Frontend | 15 testes, todos passando |
 | Suíte do LLM | 10 testes, todos passando |
 | `lab.py experimento --simulado` no Ubuntu 24.04 (WSL), sem `python3-venv` | Caminho completo: uv → venv → gateway → calibração → previsão → carga → desafio → gráficos |

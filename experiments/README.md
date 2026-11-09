@@ -38,6 +38,17 @@ flowchart LR
 disputa. É por isso que a calibração é feita com N = K, e não com N = 1. No backend simulado, as vagas não disputam CPU;
 por isso o ensaio simulado com K = 2 não é comparável ao real.
 
+## Regime estável: a primeira leva é descartada
+
+Os N clientes começam juntos. Por isso a primeira leva de pedidos tem esperas de 0 a (N−1)·S, e não as esperas do
+regime estável, (N/K − 1)·S, que a previsão descreve. O `carga.py` marca os primeiros N pedidos concluídos como
+`transiente=True` (ajustável com `--descartar`): eles não contam para a meta `--pedidos` nem para os gráficos, e a
+vazão é medida a partir do fim do transitório.
+
+Esse descarte foi acrescentado depois do ensaio de 09/11. Sem ele, com N = 16 e 12 pedidos por execução, só concluíam
+os pedidos que tinham esperado pouco, e o TTFT medido ficou em 6 s contra 16 s previstos. Era um viés de método, não um
+erro da previsão.
+
 ## O que cada CSV tem
 
 Colunas extras da execução: `clientes`, `duracao_s`, `k`, `politica`, `rep`. Por pedido:
@@ -53,6 +64,7 @@ Colunas extras da execução: `clientes`, `duracao_s`, `k`, `politica`, `rep`. P
 | `tokens` | `done.completion_tokens`, a contagem do runtime |
 | `trechos` | Quantos `delta` chegaram (não são tokens) |
 | `inicio_s` | Instante do envio, relativo ao começo da execução |
+| `transiente` | `True` na primeira leva (fora do regime estável); ignorado nos gráficos |
 
 ## Resultados
 

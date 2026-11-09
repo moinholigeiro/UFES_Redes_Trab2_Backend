@@ -57,6 +57,8 @@ def carregar(pasta: Path) -> list[dict[str, str]]:
             continue
         with arquivo.open(encoding="utf-8") as fh:
             for linha in csv.DictReader(fh):
+                if linha.get("transiente") == "True":
+                    continue  # primeira leva, fora do regime estável (ver carga.py)
                 linha["_arquivo"] = arquivo.name
                 linhas.append(linha)
     return linhas
