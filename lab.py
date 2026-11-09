@@ -114,6 +114,49 @@ def sha256(caminho: Path) -> str:
     return h.hexdigest()
 
 
+def baixar_com_retomada(url: str, temporario: Path, tentativas: int = 8) -> None:
+    """Baixa para `temporario`, retomando de onde parou (HTTP Range) se a conexão cair.
+
+    Uma conexão que fecha no meio nem sempre gera erro: o `read()` simplesmente devolve vazio.
+    Por isso o tamanho baixado é comparado com o Content-Length a cada tentativa (achado no teste
+    real de 09/11: o modelo de 1,1 GB veio truncado e só o SHA-256 percebeu).
+    """
+    total: int | None = None
+    temporario.unlink(missing_ok=True)
+    for tentativa in range(1, tentativas + 1):
+        lido = temporario.stat().st_size if temporario.exists() else 0
+        pedido = urllib.request.Request(url, headers={"Range": f"bytes={lido}-"} if lido else {})
+        try:
+            modo = "ab" if lido else "wb"
+            with urllib.request.urlopen(pedido, timeout=60) as resp, temporario.open(modo) as fh:
+                if lido and resp.status != 206:  # servidor ignorou o Range: recomeça do zero
+                    fh.truncate(0)
+                    lido = 0
+                tamanho = int(resp.headers.get("Content-Length") or 0)
+                if total is None and tamanho:
+                    total = lido + tamanho
+                ultimo = 0.0
+                while True:
+                    bloco = resp.read(1 << 20)
+                    if not bloco:
+                        break
+                    fh.write(bloco)
+                    lido += len(bloco)
+                    if total and time.monotonic() - ultimo > 5:
+                        ultimo = time.monotonic()
+                        print(f"      {lido / total:6.1%} de {total / 1e6:,.0f} MB", flush=True)
+        except (urllib.error.URLError, OSError) as exc:
+            info(f"conexão caiu na tentativa {tentativa} ({exc}); retomando ...")
+            time.sleep(min(30, 2 * tentativa))
+            continue
+        if total is None or lido >= total:
+            return
+        info(f"download incompleto ({lido / 1e6:,.0f} de {total / 1e6:,.0f} MB); retomando ...")
+    temporario.unlink(missing_ok=True)
+    falha(f"não consegui baixar {url} depois de {tentativas} tentativas. "
+          "Sem internet? Use --cache com o pendrive.")
+
+
 def baixar(url: str, destino: Path, esperado: str, cache: Path | None) -> Path:
     """Baixa (ou copia do cache) e confere o SHA-256. Nunca usa um arquivo que não confere."""
     if destino.is_file() and sha256(destino) == esperado:
@@ -126,22 +169,7 @@ def baixar(url: str, destino: Path, esperado: str, cache: Path | None) -> Path:
         shutil.copyfile(origem_cache, temporario)
     else:
         info(f"baixando {destino.name} ...")
-        try:
-            with urllib.request.urlopen(url, timeout=60) as resp, temporario.open("wb") as fh:
-                total = int(resp.headers.get("Content-Length") or 0)
-                lido, ultimo = 0, 0.0
-                while True:
-                    bloco = resp.read(1 << 20)
-                    if not bloco:
-                        break
-                    fh.write(bloco)
-                    lido += len(bloco)
-                    if total and time.monotonic() - ultimo > 2:
-                        ultimo = time.monotonic()
-                        print(f"      {lido / total:6.1%} de {total / 1e6:,.0f} MB", flush=True)
-        except (urllib.error.URLError, OSError) as exc:
-            temporario.unlink(missing_ok=True)
-            falha(f"não consegui baixar {url}: {exc}. Sem internet? Use --cache com o pendrive.")
+        baixar_com_retomada(url, temporario)
     obtido = sha256(temporario)
     if obtido != esperado:
         temporario.unlink()
