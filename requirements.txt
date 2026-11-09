@@ -1,0 +1,3 @@
+# Dependências do gateway e das ferramentas do experimento (lidas do pyproject.toml).
+# pip install -r requirements.txt
+-e .[experiments]

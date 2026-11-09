@@ -17,8 +17,24 @@ repositórios. Para comparar: `git diff antes-do-plano-v2 -- caminho/do/arquivo`
 
 ## 1. Requisitos da spec e onde cada um é atendido
 
-A nota se divide em núcleo 30%, incrementos 25%, experimento 25%, pergunta-desafio 10%, código/README/apresentação 10%
-e bônus de até 10%.
+**Prazo: 22/11/2026** (confirmado pela equipe em 09/11; as datas de 26/10 e 08/11 dos documentos anteriores estão
+erradas).
+
+**Como a nota é dada.** As instruções de entrega ([INSTRUCOES-ENTREGA.pdf](INSTRUCOES-ENTREGA.pdf)) trazem esta tabela,
+que pesa diferente da tabela da spec:
+
+| Critério (instruções de entrega) | Pontos | O que o plano faz por ele |
+|---|---|---|
+| Atendimento aos requisitos do desafio | 10 | Tabela abaixo |
+| Qualidade do código (estrutura e boas práticas) | 20 | Testes, CI, lint, README no formato pedido |
+| **Conhecimento sobre o código** | **40** | Simplificações (seção 2), `EXPLICACAO.md` com diagramas, perguntas de entrevista (seção 7) |
+| Tratamento de erros e exceções | 10 | Relatório, seção 4 |
+| Testes de desempenho e estabilidade | 10 | Experimento reduzido (3 repetições) e suíte no CI |
+| Inovação e incrementos implementados | 10 | Fila com posição, migração da fila, `lab.py` |
+
+A tabela da spec (núcleo 30%, incrementos 25%, experimento 25%, desafio 10%, código 10%, bônus até 10%) continua
+valendo como lista do que fazer. Pela tabela das instruções, **entender o próprio código vale mais que qualquer
+funcionalidade nova**: na dúvida, simplificar.
 
 | Requisito | Onde está | Situação depois do plano |
 |---|---|---|
@@ -31,7 +47,7 @@ e bônus de até 10%.
 | Inteligência: roteamento semântico | `routing.py` | Mantido como **opcional e desligado** (decisão D3) |
 | Experimento: N = 1…16, previsão antes, repetições, gráficos | `experiments/` | Ferramentas prontas e testadas em modo simulado; **a medição real roda no laboratório** |
 | Pergunta-desafio | `experiments/`, política de fila | Ferramentas prontas; **a medição real roda no laboratório** |
-| Relatório de até 6 páginas | — | Esqueleto em `docs/RELATORIO-ESQUELETO.md`; o texto final depende das medições |
+| Relatório breve (instruções de entrega) | `docs/RELATORIO.md` | Escrito; falta preencher a medição real |
 | README reproduzível e demonstração | `README.md`, `lab.py`, `docs/LABORATORIO.md` | Um comando: `python3 lab.py demo` |
 
 ---
@@ -42,7 +58,7 @@ e bônus de até 10%.
 
 | # | Decisão | Antes | Escolha | Por quê | Entrevista |
 |---|---|---|---|---|---|
-| D0 | Prazo | 26/10, já passou | **Confirmar com o professor** | Define quantas repetições cabem | — |
+| D0 | Prazo | 26/10 (errado) | **22/11/2026** | Confirmado pela equipe em 09/11; cabe a medição real com 3 repetições | — |
 | D1 | Repositórios | 3 | **Manter os 3** | Fronteiras claras, um dono por repo | = |
 | D2 | Ambiente | Nix obrigatório | **`lab.py`**: cria o venv sozinho (usa o `uv` se o Python da máquina for anterior ao 3.12), baixa o `llama-server` oficial e os modelos com SHA-256 conferido. O Nix continua como alternativa | Roda igual em qualquer Linux do laboratório, sem instalar nada no sistema | ↓↓ |
 | D3 | Roteador semântico | Ligado no perfil M2; scikit-learn obrigatório | **Opcional e desligado.** O scikit-learn virou dependência opcional (`pip install -e .[router]`) | A spec pede duas trilhas, e Desempenho + Segurança cobrem isso. O código fica, sem pesar na instalação, caso o professor peça uma terceira trilha para o trio | ↓ |
@@ -338,4 +354,4 @@ decisão da seção 2? Anote no próprio `MUDANCAS.md` e a gente decide junto. T
 | O laboratório estar sem internet | Usar o cache do pendrive: `python3 lab.py demo --cache /media/pendrive/t2-cache` |
 | A máquina ter pouca RAM | `--leve`: um modelo só, de ~1,1 GB |
 | O firewall bloquear as portas entre máquinas | Cenário 1 na apresentação; os outros cenários rodam nos notebooks da equipe |
-| Não dar tempo de 5 repetições | Prioridade: cenário 3 (25%), depois a pergunta-desafio (10%), depois o cenário 4 |
+| Não dar tempo de 3 repetições | Prioridade: entender o código (40 pts), depois o cenário 3, depois a pergunta-desafio, depois o cenário 4 |

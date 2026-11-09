@@ -19,7 +19,9 @@ Detalhes, motivos e como conferir: [docs/MUDANCAS.md](docs/MUDANCAS.md). Estado 
 - O gateway serve a tela (`gateway.frontend_dir`).
 - `lab.py`: demo, nó, gateway, experimento, baixar e pacote, num comando.
 - `experiments/`: carga em laço fechado, previsão pela lei de Little, gráficos com IC 95%.
-- CI no GitHub Actions; `docs/PLANO.md`, `docs/MUDANCAS.md`, `docs/LABORATORIO.md`, `docs/RELATORIO-ESQUELETO.md`.
+- CI no GitHub Actions; `docs/PLANO.md`, `docs/MUDANCAS.md`, `docs/LABORATORIO.md`, `docs/RELATORIO.md`.
+- README no formato das instruções de entrega; `requirements.txt`; relatório breve; prazo de 22/11 e a tabela de
+  pontos das instruções no `docs/PLANO.md`; experimento com 3 repetições de 20 pedidos por padrão.
 
 **Alterado**
 - Roteador semântico opcional e desligado; scikit-learn e NumPy viraram o extra `[router]`.

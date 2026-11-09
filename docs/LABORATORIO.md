@@ -113,12 +113,12 @@ python3 lab.py experimento --desafio
 Ordem do que ele faz:
 1. para cada K (padrão 1 e 2), sobe o nó com K vagas;
 2. calibra com N = K e **grava a previsão** (`previsao-k*.json`) antes de medir;
-3. roda N = 1, 2, 4, 8, 16, com 5 repetições de 30 pedidos cada;
+3. roda N = 1, 2, 4, 8, 16, com 3 repetições de 20 pedidos cada (mais os N primeiros, descartados como transitório);
 4. roda a pergunta-desafio: N = 8, metade dos pedidos curtos, FIFO contra curtos primeiro;
 5. gera os gráficos e o `resumo.md` em `experiments/resultados/<data>/`.
 
-**Tempo estimado na CPU:** ~7 h com os padrões. Para caber numa tarde, use menos repetições e pedidos:
-`--reps 3 --pedidos 15`. O `LEIA-ME.txt` da pasta registra o comando usado.
+**Tempo estimado na CPU** (Qwen3 1.7B, ~16 s por pedido de 128 tokens): ~3 a 4 h com os padrões. Para caber numa
+tarde, use `--k 1 --reps 2` (~1 h). O `LEIA-ME.txt` da pasta registra o comando usado.
 
 **Ensaio sem modelo, em 5 minutos:** `python3 lab.py experimento --simulado --reps 2 --pedidos 10`. Serve para
 conferir o caminho inteiro (carga, previsão, gráficos) antes de gastar horas. A pasta ganha o sufixo `_simulado`,

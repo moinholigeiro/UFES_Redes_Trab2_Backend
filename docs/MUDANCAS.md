@@ -199,6 +199,16 @@ testes cobrem as ferramentas (`tests/test_experimentos.py`). Explicação comple
 
 ---
 
+## Depois: instruções de entrega e prazo (09/11, à tarde)
+
+- **Prazo: 22/11/2026.** As datas de 26/10 e 08/11 dos documentos anteriores estavam erradas.
+- **Nota.** As instruções de entrega ([INSTRUCOES-ENTREGA.pdf](INSTRUCOES-ENTREGA.pdf)) dão **40 dos 100 pontos a
+  "conhecimento sobre o código"**. Por isso a simplificação e os diagramas viraram a prioridade (ver `PLANO.md`).
+- **README** no formato pedido (descrição, tecnologias, como executar, como testar, funcionalidades, melhorias), mais um
+  `requirements.txt`.
+- **Relatório breve** escrito em [RELATORIO.md](RELATORIO.md). Falta preencher a medição real.
+- **Experimento:** o padrão do `lab.py experimento` passou para 3 repetições de 20 pedidos, ~3 a 4 h na CPU.
+
 ## O que NÃO mudou
 
 - Os prompts, o schema `prontuario-v1`, os modelos, o parser estrito do runtime e os limites de bytes e de prazo.
