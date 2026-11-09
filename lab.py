@@ -240,13 +240,20 @@ def garantir_python(cache: Path | None) -> Path:
         return python
     ESTADO.mkdir(parents=True, exist_ok=True)
     pacote = f"{BACKEND}[experiments]"
-    if sys.version_info >= (3, 12):
+    try:
+        import ensurepip  # noqa: F401  (o Ubuntu sem python3-venv não tem; aí o venv falha)
+
+        venv_nativo = sys.version_info >= (3, 12)
+    except ImportError:
+        venv_nativo = False
+    if venv_nativo:
         info("criando o ambiente Python em .venv ...")
         subprocess.check_call([sys.executable, "-m", "venv", str(BACKEND / ".venv")])
         subprocess.check_call([str(python), "-m", "pip", "install", "--quiet", "--upgrade", "pip"])
         subprocess.check_call([str(python), "-m", "pip", "install", "--quiet", "-e", pacote])
     else:
-        info(f"Python {platform.python_version()} é anterior ao 3.12: usando o uv para trazer o 3.12")
+        info(f"Python {platform.python_version()} sem venv utilizável: usando o uv para trazer o 3.12")
+        shutil.rmtree(BACKEND / ".venv", ignore_errors=True)
         url, esperado = UV[sistema()]
         arquivo = baixar(url, ESTADO / "downloads" / url.rsplit("/", 1)[1], esperado, cache)
         destino = ESTADO / "uv"
