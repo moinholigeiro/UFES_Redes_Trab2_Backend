@@ -130,9 +130,11 @@ def test_failover_can_be_disabled_by_config(serve):
 
 def test_expired_request_is_not_retried_on_compatible_replica(serve):
     raw = replicas_config()
-    raw["gateway"]["request_deadline_s"] = 0.01
-    raw["gateway"]["request_body_timeout_s"] = 0.01
-    raw["nodes"][0]["simulation"]["startup_delay_s"] = 0.05
+    # O prazo vence antes de o nó começar a responder. Com 0,01 s o teste falhava em máquina
+    # carregada; a folga de 3x entre os dois tempos mantém a mesma ideia sem depender da CPU.
+    raw["gateway"]["request_deadline_s"] = 0.3
+    raw["gateway"]["request_body_timeout_s"] = 0.3
+    raw["nodes"][0]["simulation"]["startup_delay_s"] = 1.0
     server = serve(raw)
     with post_stream(server.url) as response:
         events = list(iter_sse(response.iter_lines()))

@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
+# No Git Bash (Windows), "/CN=..." do openssl viraria um caminho; em Linux a variável não tem efeito.
+export MSYS_NO_PATHCONV=1
 
 out_dir="${1:-artifacts/tls}"
 extra_sans="${2:-}"

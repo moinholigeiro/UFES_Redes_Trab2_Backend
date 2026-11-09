@@ -207,12 +207,15 @@ def write_credential_file(
     path.parent.mkdir(parents=True, exist_ok=True)
     fd, temp_name = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent, text=True)
     try:
-        os.fchmod(fd, 0o600)
+        # O `with` fecha o descritor mesmo em erro; sem isso, o unlink abaixo falha no Windows.
         with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            if hasattr(os, "fchmod"):  # POSIX: restringe antes de escrever o segredo
+                os.fchmod(fh.fileno(), 0o600)
             fh.write("\n".join(lines))
             fh.flush()
             os.fsync(fh.fileno())
         os.replace(temp_name, path)
+        # No Windows, chmod só controla somente-leitura; o modo 0600 vale em Linux e macOS.
         os.chmod(path, 0o600)
     except Exception:
         with suppress(FileNotFoundError):

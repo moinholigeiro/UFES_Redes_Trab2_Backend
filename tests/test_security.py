@@ -6,6 +6,7 @@ import json
 import os
 import ssl
 import subprocess
+import sys
 from pathlib import Path
 
 import httpx
@@ -62,7 +63,8 @@ def test_opaque_token_file_contains_hash_only_and_mode_0600(tmp_path: Path):
     text = path.read_text(encoding="utf-8")
     assert token not in text
     assert token_digest(token) in text
-    assert os.stat(path).st_mode & 0o777 == 0o600
+    if sys.platform != "win32":  # o Windows não representa permissões POSIX
+        assert os.stat(path).st_mode & 0o777 == 0o600
     assert len(token) >= 40
     assert '[users."aluno.teste"]' in text
 
