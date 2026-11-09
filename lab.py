@@ -448,7 +448,9 @@ def config_gateway(nos: list[tuple[str, str, str]], *, leve: bool, tls: Path | N
     if simulado:
         linhas += ['', '[models.sim-small]', 'family = "simulado"', 'quantization = "none"',
                    'source = "backend simulado"', 'license = "n/a"']
-        redes_modelo, pront_modelo = "sim-small", None
+        # O token do lab vale para os dois domínios, e o gateway recusa token com domínio
+        # inexistente; por isso o prontuário existe também no ensaio (não é usado pela carga).
+        redes_modelo, pront_modelo = "sim-small", "sim-small"
     else:
         linhas.append(MODELOS_TOML)
         redes_modelo = "qwen3-1.7b"
