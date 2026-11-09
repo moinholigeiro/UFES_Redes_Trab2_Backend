@@ -27,9 +27,13 @@ class SimulatedBackend:
         if self._sim.startup_delay_s:
             await asyncio.sleep(self._sim.startup_delay_s)
         interval = 1.0 / self._sim.tokens_per_second
-        for index, piece in enumerate(self._pieces):
+        # Como o llama-server, respeita max_output_tokens (cada trecho simulado conta como 1 token)
+        # e termina com "length" quando corta a resposta.
+        pieces = self._pieces[: job.max_output_tokens]
+        for index, piece in enumerate(pieces):
             if self._sim.fail_after_deltas is not None and index == self._sim.fail_after_deltas:
                 raise JobError("backend_unavailable", "falha simulada do nó")
             await asyncio.sleep(interval)
             yield Delta(piece)
-        yield Finish("stop", None)
+        reason = "length" if len(pieces) < len(self._pieces) else "stop"
+        yield Finish(reason, {"completion_tokens": len(pieces)} if self._sim.report_usage else None)

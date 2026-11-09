@@ -341,7 +341,7 @@ def test_mid_stream_failure_reports_partial_error_without_done(serve):
     server = serve(raw)
     with stream_post(server.url, {"domain": "redes", "input": "oi"}) as resp:
         events, _ = collect_events(resp)
-    assert [name for name, _ in events] == ["meta", "delta", "delta", "error"]
+    assert [name for name, _ in events if name != "queued"] == ["meta", "delta", "delta", "error"]
     error = events[-1][1]
     assert error["partial"] is True and error["retryable"] is True
     assert error["code"] == "backend_unavailable"
@@ -354,5 +354,5 @@ def test_failure_before_first_token_is_not_partial(serve):
     server = serve(raw)
     with stream_post(server.url, {"domain": "redes", "input": "oi"}) as resp:
         events, _ = collect_events(resp)
-    assert [name for name, _ in events] == ["meta", "error"]
+    assert [name for name, _ in events if name != "queued"] == ["meta", "error"]
     assert events[-1][1]["partial"] is False

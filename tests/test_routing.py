@@ -11,9 +11,9 @@ pytest.importorskip("sklearn", reason="roteador opcional: pip install -e .[route
 
 from llm_gateway.config import load_config
 from llm_gateway.protocol import iter_sse
-from llm_gateway.routing import RouteUncertain, SemanticRouter, load_examples  # noqa: E402
+from llm_gateway.routing import RouteUncertain, SemanticRouter, load_examples
 
-from .conftest import sim_config_dict  # noqa: E402
+from .conftest import sim_config_dict
 
 ROOT = Path(__file__).resolve().parents[1]
 

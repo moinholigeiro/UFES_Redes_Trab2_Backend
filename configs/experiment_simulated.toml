@@ -1,0 +1,53 @@
+# Ensaio do experimento SEM modelo real (backend simulado). Serve para testar o gerador de carga,
+# a previsão e os gráficos em qualquer máquina, em segundos. NÃO é resultado do trabalho:
+# os números reais saem do perfil experiment.toml, gerado pelo lab.py com llama-server.
+#
+# O nó simulado gera ~10 trechos/s (o Qwen3 1.7B mediu ~10,7 tokens/s na CPU) e corta a
+# resposta em max_output_tokens, como o llama-server. Cada vaga simulada roda em paralelo sem
+# disputar CPU, ao contrário do modelo real: por isso K > 1 aqui não é comparável ao real.
+
+[gateway]
+host = "127.0.0.1"
+port = 8090
+max_output_tokens_limit = 512
+request_deadline_s = 1200.0
+queue_timeout_s = 900.0
+client_stall_timeout_s = 60.0
+heartbeat_interval_s = 5.0
+metrics_log = "artifacts/logs/experiment-simulated.jsonl"
+allow_simulated_backends = true
+
+[scheduling]
+policy = "fifo"
+aging_s = 30.0
+
+[balancing]
+policy = "round_robin"
+
+[models.sim-small]
+family = "simulado"
+quantization = "none"
+source = "backend simulado"
+license = "n/a"
+
+[domains.redes]
+description = "Redes (simulado, ensaio do experimento)"
+models = ["sim-small"]
+prompt = "redes-v1"
+output = "text"
+temperature = 0.0
+default_max_output_tokens = 64
+max_output_tokens = 512
+
+[[nodes]]
+name = "sim-1"
+kind = "simulated"
+model = "sim-small"
+max_inflight = 1
+max_queue = 64
+
+[nodes.simulation]
+tokens_per_second = 40.0
+startup_delay_s = 0.2
+report_usage = true
+response = "A camada de transporte oferece comunicação lógica entre processos em hospedeiros diferentes. A camada de transporte oferece comunicação lógica entre processos em hospedeiros diferentes. A camada de transporte oferece comunicação lógica entre processos em hospedeiros diferentes. A camada de transporte oferece comunicação lógica entre processos em hospedeiros diferentes. A camada de transporte oferece comunicação lógica entre processos em hospedeiros diferentes. A camada de transporte oferece comunicação lógica entre processos em hospedeiros diferentes. A camada de transporte oferece comunicação lógica entre processos em hospedeiros diferentes. A camada de transporte oferece comunicação lógica entre processos em hospedeiros diferentes. A camada de transporte oferece comunicação lógica entre processos em hospedeiros diferentes. A camada de transporte oferece comunicação lógica entre processos em hospedeiros diferentes. A camada de transporte oferece comunicação lógica entre processos em hospedeiros diferentes. A camada de transporte oferece comunicação lógica entre processos em hospedeiros diferentes. A camada de transporte oferece comunicação lógica entre processos em hospedeiros diferentes. A camada de transporte oferece comunicação lógica entre processos em hospedeiros diferentes. A camada de transporte oferece comunicação lógica entre processos em hospedeiros diferentes. A camada de transporte oferece comunicação lógica entre processos em hospedeiros diferentes. A camada de transporte oferece comunicação lógica entre processos em hospedeiros diferentes. A camada de transporte oferece comunicação lógica entre processos em hospedeiros diferentes. A camada de transporte oferece comunicação lógica entre processos em hospedeiros diferentes. A camada de transporte oferece comunicação lógica entre processos em hospedeiros diferentes. A camada de transporte oferece comunicação lógica entre processos em hospedeiros diferentes. A camada de transporte oferece comunicação lógica entre processos em hospedeiros diferentes. A camada de transporte oferece comunicação lógica entre processos em hospedeiros diferentes. A camada de transporte oferece comunicação lógica entre processos em hospedeiros diferentes. A camada de transporte oferece comunicação lógica entre processos em hospedeiros diferentes. A camada de transporte oferece comunicação lógica entre processos em hospedeiros diferentes. A camada de transporte oferece comunicação lógica entre processos em hospedeiros diferentes. A camada de transporte oferece comunicação lógica entre processos em hospedeiros diferentes. A camada de transporte oferece comunicação lógica entre processos em hospedeiros diferentes. A camada de transporte oferece comunicação lógica entre processos em hospedeiros diferentes. A camada de transporte oferece comunicação lógica entre processos em hospedeiros diferentes. A camada de transporte oferece comunicação lógica entre processos em hospedeiros diferentes. A camada de transporte oferece comunicação lógica entre processos em hospedeiros diferentes. A camada de transporte oferece comunicação lógica entre processos em hospedeiros diferentes. A camada de transporte oferece comunicação lógica entre processos em hospedeiros diferentes. A camada de transporte oferece comunicação lógica entre processos em hospedeiros diferentes. A camada de transporte oferece comunicação lógica entre processos em hospedeiros diferentes. A camada de transporte oferece comunicação lógica entre processos em hospedeiros diferentes. A camada de transporte oferece comunicação lógica entre processos em hospedeiros diferentes. A camada de transporte oferece comunicação lógica entre processos em hospedeiros diferentes. A camada de transporte oferece comunicação lógica entre processos em hospedeiros diferentes. A camada de transporte oferece comunicação lógica entre processos em hospedeiros diferentes. A camada de transporte oferece comunicação lógica entre processos em hospedeiros diferentes. A camada de transporte oferece comunicação lógica entre processos em hospedeiros diferentes. A camada de transporte oferece comunicação lógica entre processos em hospedeiros diferentes. A camada de transporte oferece comunicação lógica entre processos em hospedeiros diferentes. A camada de transporte oferece comunicação lógica entre processos em hospedeiros diferentes. A camada de transporte oferece comunicação lógica entre processos em hospedeiros diferentes. A camada de transporte oferece comunicação lógica entre processos em hospedeiros diferentes. A camada de transporte oferece comunicação lógica entre processos em hospedeiros diferentes. A camada de transporte oferece comunicação lógica entre processos em hospedeiros diferentes. A camada de transporte oferece comunicação lógica entre processos em hospedeiros diferentes. A camada de transporte oferece comunicação lógica entre processos em hospedeiros diferentes. A camada de transporte oferece comunicação lógica entre processos em hospedeiros diferentes. A camada de transporte oferece comunicação lógica entre processos em hospedeiros diferentes. A camada de transporte oferece comunicação lógica entre processos em hospedeiros diferentes. A camada de transporte oferece comunicação lógica entre processos em hospedeiros diferentes. A camada de transporte oferece comunicação lógica entre processos em hospedeiros diferentes. A camada de transporte oferece comunicação lógica entre processos em hospedeiros diferentes. A camada de transporte oferece comunicação lógica entre processos em hospedeiros diferentes."

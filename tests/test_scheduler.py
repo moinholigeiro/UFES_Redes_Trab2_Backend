@@ -70,10 +70,13 @@ def make_sched(
     return sched, log
 
 
-async def drain(job: Job) -> list[tuple[str, dict]]:
+async def drain(job: Job, *, keep_queued: bool = False) -> list[tuple[str, dict]]:
+    """Lê eventos até o terminal. `queued` (posição na fila) é omitido, salvo se pedido."""
     events: list[tuple[str, dict]] = []
     while True:
         event, data = await asyncio.wait_for(job.events.get(), timeout=10)
+        if event == "queued" and not keep_queued:
+            continue
         events.append((event, data))
         if event in ("done", "error"):
             return events
@@ -173,6 +176,8 @@ async def test_cancel_active_job_releases_slot_for_next(tmp_path):
     sched.start()
     try:
         first_event = await asyncio.wait_for(long_job.events.get(), timeout=5)
+        while first_event[0] == "queued":
+            first_event = await asyncio.wait_for(long_job.events.get(), timeout=5)
         assert first_event[0] == "delta"
         sched.cancel(long_job, "client_disconnected")
         events = await drain(next_job)

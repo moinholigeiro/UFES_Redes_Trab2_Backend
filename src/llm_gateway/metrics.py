@@ -8,13 +8,16 @@ from __future__ import annotations
 
 import json
 import time
-from dataclasses import dataclass
+from collections import deque
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, TextIO
 
 from .jobs import Job, JobState
 
 EWMA_ALPHA = 0.3
+# Janela da vazão agregada exposta em /metrics.
+THROUGHPUT_WINDOW_S = 60.0
 
 
 @dataclass
@@ -26,6 +29,34 @@ class NodeStats:
     rejected: int = 0
     observations: int = 0
     service_ewma_s: float | None = None
+    completed_tokens: int = 0
+    started_at: float = field(default_factory=time.monotonic)
+    # (instante de conclusão, tokens) dos pedidos concluídos na última janela
+    _recent: deque[tuple[float, int]] = field(default_factory=deque, repr=False)
+
+    def observe_completion(self, tokens: int | None, now: float | None = None) -> None:
+        """Registra um pedido concluído para a vazão. Sem contagem do runtime, conta 0 tokens."""
+        current = time.monotonic() if now is None else now
+        count = tokens or 0
+        self.completed_tokens += count
+        self._recent.append((current, count))
+        self._prune(current)
+
+    def _prune(self, now: float) -> None:
+        while self._recent and now - self._recent[0][0] > THROUGHPUT_WINDOW_S:
+            self._recent.popleft()
+
+    def throughput(self, now: float | None = None) -> dict[str, float]:
+        """Vazão na última janela: pedidos/s e tokens/s concluídos (agregado do nó)."""
+        current = time.monotonic() if now is None else now
+        self._prune(current)
+        span = min(THROUGHPUT_WINDOW_S, max(current - self.started_at, 1e-9))
+        tokens = sum(count for _, count in self._recent)
+        return {
+            "window_s": round(span, 3),
+            "requests_per_s": round(len(self._recent) / span, 4),
+            "tokens_per_s": round(tokens / span, 3),
+        }
 
     def observe_service(self, service_s: float) -> None:
         self.observations += 1

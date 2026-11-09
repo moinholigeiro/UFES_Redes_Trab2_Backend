@@ -15,7 +15,8 @@ from typing import Any
 import httpx
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import ValidationError
 
 from .backends import make_backend
@@ -64,7 +65,10 @@ async def _read_limited(request: Request, limit: int) -> bytes:
 async def _event_stream(
     request: Request, gateway: Gateway, job: Job, heartbeat_s: float
 ) -> AsyncIterator[str]:
-    meta_sent = False
+    # `meta` sai antes do primeiro evento e de novo sempre que o pedido muda de nó antes do
+    # primeiro trecho (failover ou migração da fila). Assim o cliente sabe em que nó está.
+    meta_attempt: int | None = None
+    delta_sent = False
     try:
         while True:
             try:
@@ -80,7 +84,7 @@ async def _event_stream(
                     await asyncio.gather(attempt_task, return_exceptions=True)
                 if gateway.retry_before_first_delta(job):
                     continue
-            if not meta_sent:
+            if meta_attempt != job.attempt and not delta_sent:
                 yield sse_encode(
                     "meta",
                     {
@@ -100,7 +104,9 @@ async def _event_stream(
                         "complexity_confidence": job.complexity_confidence,
                     },
                 )
-                meta_sent = True
+                meta_attempt = job.attempt
+            if event == "delta":
+                delta_sent = True
             yield sse_encode(event, data)
             if event in TERMINAL_EVENTS:
                 return
@@ -157,15 +163,9 @@ def create_app(config: AppConfig) -> FastAPI:
                                     )
                                 except ValueError:
                                     healthy_response = False
-                            if healthy_response:
-                                scheduler.healthy = True
-                                scheduler.last_failure = None
-                            else:
-                                scheduler.healthy = False
-                                scheduler.last_failure = "health_check_failed"
+                            scheduler.set_health(healthy_response, "health_check_failed")
                         except httpx.HTTPError:
-                            scheduler.healthy = False
-                            scheduler.last_failure = "health_check_failed"
+                            scheduler.set_health(False, "health_check_failed")
 
                 await asyncio.gather(*(probe(scheduler) for scheduler in gateway.nodes.values()))
 
@@ -394,6 +394,18 @@ def create_app(config: AppConfig) -> FastAPI:
         )
         response.headers["X-Request-ID"] = job.request_id
         return response
+
+    frontend_dir = config.gateway.frontend_dir
+    if frontend_dir is not None:
+        # Serve a tela na mesma origem da API: sem CORS e sem outro servidor no laboratório.
+        index_file = Path(frontend_dir) / "index.html"
+        if not index_file.is_file():
+            raise RuntimeError(f"gateway.frontend_dir sem index.html: {frontend_dir}")
+        app.mount("/src", StaticFiles(directory=Path(frontend_dir) / "src"), name="frontend-src")
+
+        @app.get("/", include_in_schema=False)
+        async def frontend_index() -> FileResponse:
+            return FileResponse(index_file, headers={"Cache-Control": "no-cache"})
 
     return app
 

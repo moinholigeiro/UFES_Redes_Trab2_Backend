@@ -81,6 +81,7 @@ class Job:
     node: str = ""
     state: JobState = JobState.QUEUED
     queue_depth_at_admission: int = 0
+    queue_position: int | None = None  # posição atual na fila do nó; None fora da fila
     dispatched_at: float | None = None
     first_delta_at: float | None = None
     last_delta_at: float | None = None

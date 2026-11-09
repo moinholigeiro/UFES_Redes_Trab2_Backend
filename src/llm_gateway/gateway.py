@@ -11,6 +11,7 @@ from .balancing import Balancer
 from .config import AppConfig
 from .jobs import FAILOVER_CODES, Job
 from .metrics import RequestLog
+from .queue_policy import QueuePolicy
 from .scheduler import NodeScheduler, Overloaded
 
 
@@ -31,9 +32,12 @@ class Gateway:
                 stall_timeout_s=gw.client_stall_timeout_s,
                 queue_timeout_s=gw.queue_timeout_s,
                 log=log,
+                policy=QueuePolicy(config.scheduling.policy, config.scheduling.aging_s),
             )
             for n in config.nodes
         }
+        for scheduler in self.nodes.values():
+            scheduler.on_unhealthy = self.migrate_pending
         self.domain_nodes: dict[str, list[NodeScheduler]] = {
             dname: [self.nodes[n.name] for n in config.nodes if n.model in dom.models]
             for dname, dom in config.domains.items()
@@ -85,10 +89,14 @@ class Gateway:
         for sched in self.balancer.order(job.domain, candidates):
             if time.monotonic() >= job.deadline:
                 return False
+            if sched.in_system >= sched.node.max_inflight + sched.node.max_queue:
+                continue
+            # Limpa os eventos da tentativa anterior ANTES de admitir: a admissão já publica
+            # o `queued` da nova tentativa, que o cliente precisa receber.
+            while not job.events.empty():
+                job.events.get_nowait()
             try:
                 sched.admit(job)
-                while not job.events.empty():
-                    job.events.get_nowait()
                 job.error_code = None
                 job.cancel_reason = None
                 job.finish_reason = None
@@ -106,15 +114,44 @@ class Gateway:
                 continue
         return False
 
+    def migrate_pending(self, failed: NodeScheduler) -> int:
+        """Leva para outra réplica os pedidos que esperavam na fila de um nó que caiu.
+
+        Sem isso, eles ficariam parados até o nó voltar ou até estourar `queue_timeout_s`.
+        Só migra para nó saudável com o mesmo modelo; se nenhum aceitar, o pedido continua
+        na fila original e espera o nó voltar. Devolve quantos pedidos foram migrados.
+        """
+        moved = 0
+        for job in failed.pending_jobs():
+            candidates = [
+                s
+                for s in self.domain_nodes[job.domain]
+                if s is not failed and s.healthy and s.node.model == job.model
+            ]
+            for target in self.balancer.order(job.domain, candidates):
+                if target.in_system >= target.node.max_inflight + target.node.max_queue:
+                    continue
+                failed.remove_pending(job)
+                target.admit(job)  # incrementa job.attempt; o cliente recebe um novo `meta`
+                moved += 1
+                break
+        return moved
+
     def cancel(self, job: Job, reason: str) -> None:
         if job.node:
             self.nodes[job.node].cancel(job, reason)
 
     def snapshot(self) -> dict[str, Any]:
+        nodes = {name: sched.snapshot() for name, sched in self.nodes.items()}
         return {
             "balancing_policy": self.balancer.policy,
+            "queue_policy": self.config.scheduling.policy,
+            "throughput": {
+                "requests_per_s": round(sum(n["throughput"]["requests_per_s"] for n in nodes.values()), 4),
+                "tokens_per_s": round(sum(n["throughput"]["tokens_per_s"] for n in nodes.values()), 3),
+            },
             "domains": {
                 name: {"nodes": [s.name for s in scheds]} for name, scheds in self.domain_nodes.items()
             },
-            "nodes": {name: sched.snapshot() for name, sched in self.nodes.items()},
+            "nodes": nodes,
         }

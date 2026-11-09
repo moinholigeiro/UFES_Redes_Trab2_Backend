@@ -72,8 +72,12 @@ def test_failure_before_first_delta_retries_compatible_replica(serve, tmp_path):
 
     names = [name for name, _ in events]
     assert names[0] == "meta" and names[-1] == "done"
-    meta = events[0][1]
-    assert meta["request_id"]
+    # Um `meta` na admissão (nó redes-a) e outro depois do failover, antes do primeiro trecho.
+    metas = [data for name, data in events if name == "meta"]
+    assert [m["attempt"] for m in metas] == [1, 2]
+    assert metas[0]["node"] == "redes-a"
+    meta = metas[-1]
+    assert meta["request_id"] == metas[0]["request_id"]
     assert meta["attempt"] == 2
     assert meta["attempt_nodes"] == ["redes-a", "redes-b"]
     assert meta["node"] == "redes-b"
@@ -94,7 +98,7 @@ def test_mid_stream_failure_is_not_retried_or_concatenated(serve):
     with post_stream(server.url) as response:
         events = list(iter_sse(response.iter_lines()))
 
-    assert [name for name, _ in events] == ["meta", "delta", "error"]
+    assert [name for name, _ in events if name != "queued"] == ["meta", "delta", "error"]
     assert events[0][1]["node"] == "redes-a"
     assert events[0][1]["attempt"] == 1
     assert events[-1][1]["partial"] is True
@@ -123,7 +127,7 @@ def test_failover_can_be_disabled_by_config(serve):
     server = serve(replicas_config(max_failover_attempts=0))
     with post_stream(server.url) as response:
         events = list(iter_sse(response.iter_lines()))
-    assert [name for name, _ in events] == ["meta", "error"]
+    assert [name for name, _ in events if name != "queued"] == ["meta", "error"]
     assert events[0][1]["node"] == "redes-a"
     assert events[0][1]["attempt"] == 1
 

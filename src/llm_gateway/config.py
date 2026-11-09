@@ -35,6 +35,8 @@ class GatewayConfig(_Strict):
     event_buffer_size: int = Field(64, ge=2, le=65_536)
     heartbeat_interval_s: float = Field(15.0, gt=0)
     metrics_log: Path | None = Path("artifacts/logs/requests.jsonl")
+    # Pasta do repositório Frontend. Se informada, o gateway serve a tela em "/" (mesma origem da API).
+    frontend_dir: Path | None = None
     allow_simulated_backends: bool = False
     tls_certfile: Path | None = None
     tls_keyfile: Path | None = None
@@ -130,6 +132,13 @@ class RouterConfig(_Strict):
     random_seed: int = Field(42, ge=0)
 
 
+class SchedulingConfig(_Strict):
+    """Ordem da fila de cada nó: `fifo` ou `short_first` (curtos primeiro, com envelhecimento)."""
+
+    policy: Literal["fifo", "short_first"] = "fifo"
+    aging_s: float = Field(30.0, gt=0)
+
+
 class BalancingConfig(_Strict):
     policy: Literal["round_robin", "least_loaded", "least_latency"] = "round_robin"
     max_failover_attempts: int = Field(1, ge=0, le=3)
@@ -191,6 +200,8 @@ class SimulationConfig(_Strict):
     response: str = "Resposta simulada."
     startup_delay_s: float = Field(0.0, ge=0)
     fail_after_deltas: int | None = Field(None, ge=0)
+    # Ensaio do experimento: informa a contagem de "tokens" simulados como o llama-server faria.
+    report_usage: bool = False
 
 
 class NodeConfig(_Strict):
@@ -251,6 +262,7 @@ class AppConfig(_Strict):
     security: SecurityConfig = Field(default_factory=SecurityConfig)
     router: RouterConfig = Field(default_factory=RouterConfig)
     balancing: BalancingConfig = Field(default_factory=BalancingConfig)
+    scheduling: SchedulingConfig = Field(default_factory=SchedulingConfig)
     models: dict[str, ModelConfig] = Field(default_factory=dict)
     domains: dict[str, DomainConfig]
     nodes: list[NodeConfig] = Field(min_length=1)

@@ -5,6 +5,10 @@ Invariantes:
 - nº de jobs no sistema (pendentes + ativos) nunca excede `max_inflight + max_queue`;
 - admissão e reserva ocorrem no mesmo passo síncrono do event loop (sem corrida);
 - todo job termina em exatamente um estado terminal, e cada um libera seu slot.
+
+A ordem de saída da fila vem de `queue_policy.py` (FIFO ou curtos primeiro). Cada mudança de posição
+gera um evento `queued` para o cliente. Quando o nó fica fora do ar, o gateway é avisado pelo callback
+`on_unhealthy` e migra os pedidos que ainda esperavam aqui para outra réplica.
 """
 
 from __future__ import annotations
@@ -13,6 +17,7 @@ import asyncio
 import contextlib
 import time
 from collections import deque
+from collections.abc import Callable
 from typing import Any
 
 import httpx
@@ -22,6 +27,7 @@ from .clinical import validate_output
 from .config import NodeConfig
 from .jobs import RETRYABLE_CODES, Job, JobError, JobState
 from .metrics import NodeStats, RequestLog, job_record
+from .queue_policy import QueuePolicy
 
 SWEEP_INTERVAL_S = 0.5
 
@@ -39,6 +45,7 @@ class NodeScheduler:
         stall_timeout_s: float,
         queue_timeout_s: float,
         log: RequestLog,
+        policy: QueuePolicy | None = None,
     ) -> None:
         self.node = node
         self.name = node.name
@@ -53,6 +60,42 @@ class NodeScheduler:
         self.last_failure: str | None = None
         self._wake = asyncio.Event()
         self._dispatcher: asyncio.Task | None = None
+        self.policy = policy or QueuePolicy()
+        # Chamado quando o nó passa de saudável para fora do ar (o gateway migra a fila).
+        self.on_unhealthy: Callable[[NodeScheduler], None] | None = None
+
+    def set_health(self, healthy: bool, reason: str | None = None) -> None:
+        """Único ponto que muda a saúde do nó; avisa o gateway na transição para fora do ar."""
+        was_healthy = self.healthy
+        self.healthy = healthy
+        self.last_failure = None if healthy else reason
+        if was_healthy and not healthy and self.on_unhealthy is not None:
+            self.on_unhealthy(self)
+        if healthy and not was_healthy:
+            self._wake.set()
+
+    def pending_jobs(self) -> list[Job]:
+        """Pedidos que esperam vaga, na ordem em que seriam atendidos."""
+        return self.policy.ordered(self._pending, time.monotonic())
+
+    def remove_pending(self, job: Job) -> None:
+        """Tira um pedido da fila sem encerrá-lo (usado na migração para outra réplica)."""
+        self._pending.remove(job)
+        job.queue_position = None
+        self._publish_positions()
+
+    def _publish_positions(self) -> None:
+        """Envia `queued {position}` a cada pedido cuja posição na fila mudou.
+
+        Evento informativo: se o buffer do cliente estiver cheio, a atualização é pulada
+        (a próxima mudança de posição corrige).
+        """
+        for index, job in enumerate(self.pending_jobs(), start=1):
+            if job.queue_position == index:
+                continue
+            job.queue_position = index
+            if not job.events.full():
+                job.events.put_nowait(("queued", {"position": index, "node": self.name}))
 
     @property
     def pending_count(self) -> int:
@@ -95,7 +138,9 @@ class NodeScheduler:
         job.attempt_enqueued_at = time.monotonic()
         job.queue_depth_at_admission = self.in_system
         job.state = JobState.QUEUED
+        job.queue_position = None
         self._pending.append(job)
+        self._publish_positions()
         self._wake.set()
 
     def cancel(self, job: Job, reason: str) -> None:
@@ -105,6 +150,7 @@ class NodeScheduler:
         if job.state is JobState.QUEUED:
             with contextlib.suppress(ValueError):
                 self._pending.remove(job)
+                self._publish_positions()
             job.state = JobState.CANCELLED
             job.finished_at = time.monotonic()
             self.stats.cancelled += 1
@@ -120,16 +166,21 @@ class NodeScheduler:
             self._expire_pending()
             if not self.healthy:
                 continue
+            started = False
             while self._pending and len(self._active) < self.node.max_inflight:
                 now = time.monotonic()
-                if (
-                    now >= self._pending[0].deadline
-                    or now - (self._pending[0].attempt_enqueued_at or self._pending[0].enqueued_at)
-                    >= self._queue_timeout_s
-                ):
+                job = self.policy.next_job(self._pending, now)
+                assert job is not None
+                waited = now - (job.attempt_enqueued_at or job.enqueued_at)
+                if now >= job.deadline or waited >= self._queue_timeout_s:
                     self._expire_pending()
                     continue
-                self._start(self._pending.popleft())
+                self._pending.remove(job)
+                job.queue_position = None
+                self._start(job)
+                started = True
+            if started:
+                self._publish_positions()
 
     def _expire_pending(self) -> None:
         now = time.monotonic()
@@ -158,6 +209,8 @@ class NodeScheduler:
             )
             self.stats.expired += 1
             self._log.write(job_record(job))
+        if expired:
+            self._publish_positions()
 
     def _start(self, job: Job) -> None:
         job.state = JobState.ACTIVE
@@ -173,6 +226,7 @@ class NodeScheduler:
             job.state = JobState.DONE
             self.stats.completed += 1
             self.stats.observe_service(job.service_ms() / 1000.0)
+            self.stats.observe_completion(job.completion_tokens)
         except JobError as err:
             self._fail(job, err.code, err.message)
         except httpx.HTTPError:
@@ -231,9 +285,12 @@ class NodeScheduler:
             job.completion_tokens = None
             job.tokens_source = "unknown"
 
-        if finish == "length":
+        # Texto cortado no limite de tokens é uma resposta válida: o `done` informa
+        # finish_reason="length" e o cliente mostra que foi cortada. O experimento usa isso
+        # para ter pedidos de tamanho fixo. JSON cortado é inválido, por isso continua erro.
+        if finish == "length" and job.schema is not None:
             raise JobError("truncated", "limite de tokens atingido antes do fim da resposta")
-        if finish != "stop":
+        if finish not in {"stop", "length"}:
             raise JobError("incomplete_stream", "stream encerrado sem conclusão")
 
         result: dict[str, Any] | None = None
@@ -277,8 +334,7 @@ class NodeScheduler:
 
     def _fail(self, job: Job, code: str, message: str) -> None:
         if code in {"backend_unavailable", "backend_timeout", "backend_transport_error"}:
-            self.healthy = False
-            self.last_failure = code
+            self.set_health(False, code)
         job.state = JobState.FAILED
         job.error_code = code
         self.stats.failed += 1
@@ -305,6 +361,7 @@ class NodeScheduler:
             "last_failure": self.last_failure,
             "max_inflight": self.node.max_inflight,
             "max_queue": self.node.max_queue,
+            "queue_policy": self.policy.name,
             "active": self.active_count,
             "pending": self.pending_count,
             "completed": self.stats.completed,
@@ -315,4 +372,6 @@ class NodeScheduler:
             "service_ewma_s": None
             if self.stats.service_ewma_s is None
             else round(self.stats.service_ewma_s, 4),
+            "completed_tokens": self.stats.completed_tokens,
+            "throughput": self.stats.throughput(),
         }
