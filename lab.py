@@ -335,7 +335,8 @@ def garantir_token(python: Path) -> str:
 
 def garantir_tls(extra_ip: str | None) -> Path | None:
     """Certificado do gateway assinado por uma CA local. Sem openssl, devolve None (HTTP em loopback)."""
-    pasta = ESTADO / "tls"
+    # O certificado precisa citar o IP pelo qual os clientes acessam: um por endereço.
+    pasta = ESTADO / ("tls" if not extra_ip or extra_ip == "127.0.0.1" else f"tls-{extra_ip}")
     if (pasta / "gateway.crt").is_file():
         return pasta
     bash = shutil.which("bash")
@@ -638,8 +639,11 @@ def rodar_carga(python: Path, url: str, token_file: Path, ca: Path | None, *, cl
 def cmd_experimento(args: argparse.Namespace) -> int:
     cache = args.cache or (RAIZ / "cache" if (RAIZ / "cache").is_dir() else None)
     python = garantir_python(cache)
-    garantir_token(python)
-    token_file = ESTADO / "token"
+    if args.token_file:  # gateway em outra máquina: use o token dela (.lab/token de lá)
+        token_file = args.token_file
+    else:
+        garantir_token(python)
+        token_file = ESTADO / "token"
     saida = args.saida or (BACKEND / "experiments" / "resultados"
                            / (time.strftime("%Y-%m-%d_%H%M") + ("_simulado" if args.simulado else "")))
     saida.mkdir(parents=True, exist_ok=True)
@@ -800,7 +804,8 @@ def main(argv: list[str] | None = None) -> int:
     e = sub.add_parser("experimento", help="experimento obrigatório e pergunta-desafio")
     e.add_argument("--simulado", action="store_true", help="ensaio sem modelo; NÃO é resultado")
     e.add_argument("--url", help="gateway já no ar em outra máquina (o K vira só rótulo)")
-    e.add_argument("--ca", type=Path, help="CA do gateway remoto")
+    e.add_argument("--ca", type=Path, help="CA do gateway remoto (.lab/tls/ca.crt da máquina dele)")
+    e.add_argument("--token-file", type=Path, help="token do gateway remoto (.lab/token da máquina dele)")
     e.add_argument("--k", default="1,2", help="vagas por nó a medir, ex.: 1,2")
     e.add_argument("--clientes", default="1,2,4,8,16")
     e.add_argument("--reps", type=int, default=5)

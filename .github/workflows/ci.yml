@@ -1,0 +1,20 @@
+# Roda a cada push e pull request: lint e a suíte inteira (backends simulados, sem baixar modelos).
+name: CI
+on:
+  push:
+  pull_request:
+jobs:
+  testes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Instalar (com o roteador opcional, para testá-lo também)
+        run: pip install -e ".[dev,router]"
+      - name: Lint
+        run: ruff check src tests experiments lab.py
+      - name: Testes
+        run: python -m pytest -q
