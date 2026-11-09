@@ -25,7 +25,6 @@ from .jobs import FAILOVER_CODES, Job
 from .metrics import RequestLog
 from .prompts import build_messages, prompt_hash
 from .protocol import TERMINAL_EVENTS, GenerateRequest, sse_comment, sse_encode
-from .routing import RouteUncertain, SemanticRouter
 from .scheduler import Overloaded
 from .security import Principal, RateLimitExceeded, SecurityManager, load_credentials
 
@@ -127,11 +126,14 @@ def create_app(config: AppConfig) -> FastAPI:
                 if config.security.enabled and config.security.users_file is not None
                 else None
             )
-            app.state.router = (
-                SemanticRouter(config.router.examples_file, config.domains, config.router)
-                if config.router.enabled
-                else None
-            )
+            app.state.router = None
+            if config.router.enabled:
+                # Import tardio: o roteador é opcional e depende de `pip install -e .[router]`.
+                from .routing import SemanticRouter
+
+                app.state.router = SemanticRouter(
+                    config.router.examples_file, config.domains, config.router
+                )
             gateway.start()
 
             async def probe_nodes_once() -> None:
@@ -257,7 +259,7 @@ def create_app(config: AppConfig) -> FastAPI:
             return _error_response(426, "tls_required", "use HTTPS para acessar este endpoint")
         _principal(request, metrics=True)
         snapshot = app.state.gateway.snapshot()
-        router: SemanticRouter | None = app.state.router
+        router = app.state.router
         if router is not None:
             snapshot["routing_evaluation"] = router.evaluation()
         return snapshot
@@ -301,13 +303,15 @@ def create_app(config: AppConfig) -> FastAPI:
             return _error_response(413, "input_too_large", "entrada excede o limite de caracteres")
         if time.monotonic() >= request_deadline:
             return _error_response(408, "deadline_exceeded", "prazo total excedido ao ler a requisição")
-        router: SemanticRouter | None = app.state.router
+        router = app.state.router
         if req.domain == "auto" and router is None:
             return _error_response(422, "router_disabled", "roteamento auto não está habilitado")
         if req.domain != "auto" and req.domain not in config.domains:
             return _error_response(400, "unknown_domain", f"domínio desconhecido: {req.domain!r}")
         decision = None
         if router is not None and req.domain == "auto":
+            from .routing import RouteUncertain
+
             try:
                 decision = router.route(req.domain, req.input)
             except RouteUncertain as exc:

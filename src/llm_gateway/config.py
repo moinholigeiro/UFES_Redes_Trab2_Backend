@@ -203,6 +203,9 @@ class NodeConfig(_Strict):
     max_frame_bytes: int = Field(262_144, ge=1024)
     max_output_bytes: int = Field(2_097_152, ge=1024)
     chat_template_kwargs: dict[str, Any] = Field(default_factory=dict)
+    # Arquivo com a chave de API do nó (`llama-server --api-key-file`). Com ela, o nó pode ficar
+    # em HTTP na rede do laboratório: quem não tem a chave recebe 401 do llama-server.
+    api_key_file: Path | None = None
     simulation: SimulationConfig | None = None
 
     @model_validator(mode="after")
@@ -231,8 +234,10 @@ class NodeConfig(_Strict):
                     loopback = ipaddress.ip_address(parsed.hostname).is_loopback
                 except ValueError:
                     loopback = False
-            if parsed.scheme == "http" and not loopback:
-                raise ValueError("HTTP interno só é permitido para nó loopback; use HTTPS remoto")
+            if parsed.scheme == "http" and not loopback and self.api_key_file is None:
+                raise ValueError(
+                    "nó HTTP fora do loopback exige api_key_file (chave do llama-server) ou HTTPS"
+                )
             if self.simulation is not None:
                 raise ValueError("simulation só existe em nó simulated")
         else:

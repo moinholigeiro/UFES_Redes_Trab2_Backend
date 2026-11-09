@@ -195,3 +195,22 @@ async def test_in_stream_error_object_is_backend_error():
     with pytest.raises(JobError) as exc:
         await collect(backend_with(handler), make_job())
     assert exc.value.code == "backend_error"
+
+
+async def test_api_key_is_sent_as_bearer_and_401_is_reported(tmp_path):
+    key = tmp_path / "chave"
+    key.write_text("segredo\n", encoding="utf-8")
+    node = NodeConfig(
+        name="lab", kind="llama_server", url="http://10.0.0.5:8101", model="m", api_key_file=key
+    )
+    seen: list[str | None] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request.headers.get("authorization"))
+        return httpx.Response(401, content=b"{}")
+
+    backend = LlamaServerBackend(node, httpx.AsyncClient(transport=httpx.MockTransport(handler)))
+    with pytest.raises(JobError) as err:
+        await collect(backend, make_job())
+    assert seen == ["Bearer segredo"]
+    assert "chave" in err.value.message

@@ -24,6 +24,12 @@ class LlamaServerBackend:
         self._node = node
         self._client = client
         self._endpoint = node.url.rstrip("/") + "/v1/chat/completions"
+        self._headers: dict[str, str] = {}
+        if node.api_key_file is not None:
+            key = node.api_key_file.read_text(encoding="utf-8").strip()
+            if not key:
+                raise ValueError(f"arquivo de chave vazio para o nó {node.name!r}")
+            self._headers["Authorization"] = f"Bearer {key}"
 
     def _body(self, job: Job) -> dict[str, Any]:
         body: dict[str, Any] = {
@@ -45,13 +51,17 @@ class LlamaServerBackend:
         usage: dict[str, Any] | None = None
         saw_done = False
         try:
-            async with self._client.stream("POST", self._endpoint, json=self._body(job)) as resp:
+            async with self._client.stream(
+                "POST", self._endpoint, json=self._body(job), headers=self._headers
+            ) as resp:
                 if resp.status_code != 200:
                     preview = bytearray()
                     async for block in resp.aiter_bytes():
                         preview.extend(block[: 4096 - len(preview)])
                         if len(preview) >= 4096:
                             break
+                    if resp.status_code == 401:
+                        raise JobError("backend_error", f"nó {self._node.name} recusou a chave de API")
                     code = "backend_unavailable" if resp.status_code == 503 else "backend_error"
                     raise JobError(code, f"nó {self._node.name} respondeu HTTP {resp.status_code}")
                 async for line in resp.aiter_lines():

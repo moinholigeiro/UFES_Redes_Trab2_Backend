@@ -209,6 +209,7 @@ def test_metrics_access_requires_explicit_user_permission(serve, tmp_path: Path)
 
 
 def test_auto_routing_cannot_bypass_domain_authorization(serve, tmp_path: Path):
+    pytest.importorskip("sklearn", reason="roteador opcional: pip install -e .[router]")
     from .test_routing import auto_api_config
 
     users_file = tmp_path / "users.toml"

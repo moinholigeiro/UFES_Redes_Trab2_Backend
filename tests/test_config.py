@@ -26,7 +26,7 @@ def test_secure_m2_profile_requires_auth_credentials_and_tls():
     assert cfg.security.require_tls is True
     assert cfg.security.users_file == Path("secrets/users.toml")
     assert cfg.gateway.tls_certfile == Path("artifacts/tls/gateway.crt")
-    assert cfg.router.enabled is True
+    assert cfg.router.enabled is False  # roteador opcional (decisão D3)
     assert cfg.domains["redes"].default_model != cfg.domains["prontuario"].default_model
     assert set(cfg.domains["redes"].models) == set(cfg.domains["prontuario"].models)
     assert cfg.gateway.backend_ca_file == Path("secrets/llm-nodes-ca.pem")
@@ -248,3 +248,18 @@ def test_https_backend_does_not_require_private_node_certificate_in_gateway():
     }
     raw["gateway"]["backend_ca_file"] = "ca.pem"
     assert build(raw).nodes[0].url == "https://localhost:8101"
+
+
+def test_remote_http_node_is_allowed_with_api_key(tmp_path: Path):
+    key = tmp_path / "chave"
+    key.write_text("segredo-de-teste\n", encoding="utf-8")
+    raw = sim_config_dict()
+    raw["nodes"][0] = {
+        "name": "remote",
+        "kind": "llama_server",
+        "model": "sim-small",
+        "url": "http://10.0.0.5:8101",
+        "api_key_file": str(key),
+    }
+    cfg = build(raw)
+    assert cfg.nodes[0].api_key_file == key

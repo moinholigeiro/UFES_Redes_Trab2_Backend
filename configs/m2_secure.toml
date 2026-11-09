@@ -27,7 +27,8 @@ users_file = "secrets/users.toml"
 require_tls = true
 
 [router]
-enabled = true
+# Desligado por padrão (decisão D3 do docs/PLANO.md). Para ligar: pip install -e .[router]
+enabled = false
 examples_file = "data/routing_examples.jsonl"
 confidence_threshold = 0.60
 complexity_confidence_threshold = 0.55

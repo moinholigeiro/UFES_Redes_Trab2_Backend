@@ -5,12 +5,15 @@ from __future__ import annotations
 from pathlib import Path
 
 import httpx
+import pytest
+
+pytest.importorskip("sklearn", reason="roteador opcional: pip install -e .[router]")
 
 from llm_gateway.config import load_config
 from llm_gateway.protocol import iter_sse
-from llm_gateway.routing import RouteUncertain, SemanticRouter, load_examples
+from llm_gateway.routing import RouteUncertain, SemanticRouter, load_examples  # noqa: E402
 
-from .conftest import sim_config_dict
+from .conftest import sim_config_dict  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
 

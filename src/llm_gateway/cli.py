@@ -10,7 +10,6 @@ from pathlib import Path
 
 from .api import CONFIG_ENV
 from .config import AppConfig, load_config
-from .routing import SemanticRouter
 from .security import load_credentials, new_token, write_credential_file
 
 
@@ -70,6 +69,8 @@ def _cmd_check(args: argparse.Namespace) -> int:
             print(f"{label} ausente: {path}")
             ok = False
     if config.router.enabled:
+        from .routing import SemanticRouter  # opcional: pip install -e .[router]
+
         try:
             router = SemanticRouter(config.router.examples_file, config.domains, config.router)
             print(f"avaliação roteador: {json.dumps(router.evaluation(), ensure_ascii=False)}")
