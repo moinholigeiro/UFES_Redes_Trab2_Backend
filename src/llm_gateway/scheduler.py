@@ -217,6 +217,25 @@ class NodeScheduler:
         job.dispatched_at = time.monotonic()
         self._active[job.request_id] = job
         job.task = asyncio.create_task(self._run(job), name=f"job-{job.request_id}")
+        job.task.add_done_callback(lambda _task, job=job: self._release_if_never_ran(job))
+
+    def _release_if_never_ran(self, job: Job) -> None:
+        """Libera a vaga de um pedido cancelado antes de a tarefa dar o primeiro passo.
+
+        Se o cliente desconecta no mesmo instante em que o pedido ganha a vaga, `task.cancel()`
+        chega antes de `_run` começar: o asyncio descarta a corrotina sem executar o `try/finally`
+        dela, e a vaga ficaria ocupada para sempre (achado no ensaio do experimento, 09/11).
+        Este callback roda sempre; no caso normal, `_run` já liberou a vaga e ele não faz nada.
+        """
+        if self._active.pop(job.request_id, None) is None:
+            return
+        if not job.finished:
+            job.state = JobState.CANCELLED
+            job.finished_at = time.monotonic()
+            self.stats.cancelled += 1
+            with contextlib.suppress(Exception):
+                self._log.write(job_record(job))
+        self._wake.set()
 
     async def _run(self, job: Job) -> None:
         try:
@@ -355,6 +374,7 @@ class NodeScheduler:
         }
 
     def snapshot(self) -> dict[str, Any]:
+        now = time.monotonic()
         return {
             "model": self.node.model,
             "healthy": self.healthy,
@@ -373,5 +393,16 @@ class NodeScheduler:
             if self.stats.service_ewma_s is None
             else round(self.stats.service_ewma_s, 4),
             "completed_tokens": self.stats.completed_tokens,
+            # Pedidos ocupando vaga agora (diagnóstico de vaga presa); sem texto do pedido.
+            "active_jobs": [
+                {
+                    "request_id": job.request_id,
+                    "state": job.state.value,
+                    "deltas": job.delta_count,
+                    "buffered_events": job.events.qsize(),
+                    "age_s": None if job.dispatched_at is None else round(now - job.dispatched_at, 1),
+                }
+                for job in self._active.values()
+            ],
             "throughput": self.stats.throughput(),
         }

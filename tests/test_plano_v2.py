@@ -222,3 +222,30 @@ async def test_text_answer_cut_at_token_limit_ends_with_done_length(tmp_path):
         await sched.stop()
     assert [name for name, _ in events] == ["delta", "delta", "delta", "done"]
     assert events[-1][1]["finish_reason"] == "length"
+
+
+# --- vaga presa: cancelado antes de a tarefa começar ----------------------------------------------
+
+
+async def test_cancel_before_task_starts_releases_the_slot(tmp_path):
+    """Regressão (09/11): o cliente desconecta no mesmo instante em que o pedido ganha a vaga.
+
+    `task.cancel()` antes do primeiro passo descarta a corrotina sem rodar o finally de `_run`.
+    Antes da correção, a vaga ficava ocupada para sempre e a fila parava.
+    """
+    sched, _ = make_sched(tmp_path, max_inflight=1, max_queue=4)
+    stuck, next_job = make_job(), make_job()
+    sched.admit(stuck)
+    sched.admit(next_job)
+    sched._pending.remove(stuck)
+    sched._start(stuck)  # ganha a vaga e cria a tarefa...
+    sched.cancel(stuck, "client_disconnected")  # ...e é cancelado antes de a tarefa rodar
+    await asyncio.sleep(0.05)
+    assert sched.active_count == 0
+    assert stuck.finished
+    sched.start()
+    try:
+        events = await drain(next_job)  # a fila volta a andar
+    finally:
+        await sched.stop()
+    assert events[-1][0] == "done"

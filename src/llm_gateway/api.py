@@ -18,6 +18,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import ValidationError
+from starlette.requests import ClientDisconnect
 
 from .backends import make_backend
 from .config import AppConfig, load_config
@@ -295,6 +296,9 @@ def create_app(config: AppConfig) -> FastAPI:
             if time.monotonic() >= request_deadline:
                 return _error_response(408, "deadline_exceeded", "prazo total excedido ao ler a requisição")
             return _error_response(408, "request_body_timeout", "leitura do corpo excedeu o prazo")
+        except ClientDisconnect:
+            # O cliente desistiu enquanto enviava o corpo: nada foi admitido, nada a liberar.
+            return _error_response(400, "client_disconnected", "cliente desconectou durante o envio")
         try:
             req = GenerateRequest.model_validate_json(raw)
         except ValidationError:
