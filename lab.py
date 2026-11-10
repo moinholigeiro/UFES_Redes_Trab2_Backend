@@ -224,8 +224,67 @@ def iniciar(nome: str, comando: list[str], *, env: dict[str, str] | None = None)
     proc = subprocess.Popen(comando, cwd=BACKEND, stdout=log, stderr=subprocess.STDOUT,
                             env={**os.environ, **(env or {})}, **extras)
     PROCESSOS.append((nome, proc))
+    _gravar_pids()
     info(f"{nome} iniciado (pid {proc.pid}); log em .lab/logs/{nome}.log")
     return proc
+
+
+PIDS = ESTADO / "pids.json"
+# Só processos com estes nomes são encerrados como órfãos (o PID pode ter sido reaproveitado).
+NOMES_NOSSOS = ("llama-server", "llm-gateway", "node.py")
+
+
+def _gravar_pids() -> None:
+    vivos = {nome: proc.pid for nome, proc in PROCESSOS if proc.poll() is None}
+    try:
+        if vivos:
+            PIDS.write_text(json.dumps(vivos), encoding="utf-8")
+        else:
+            PIDS.unlink(missing_ok=True)
+    except OSError:
+        pass
+
+
+def _e_nosso(pid: int) -> bool:
+    if WINDOWS:
+        saida = subprocess.run(["tasklist", "/FI", f"PID eq {pid}", "/FO", "CSV", "/NH"],
+                               capture_output=True, text=True).stdout.lower()
+        return any(nome.replace(".py", "") in saida for nome in ("llama-server", "llm-gateway", "python"))
+    try:
+        cmdline = Path(f"/proc/{pid}/cmdline").read_bytes().replace(b"\0", b" ").decode("utf-8", "replace")
+    except OSError:
+        return False
+    return any(nome in cmdline for nome in NOMES_NOSSOS)
+
+
+def limpar_orfaos() -> None:
+    """Encerra processos que uma execução anterior deixou para trás.
+
+    Se o terminal do lab.py for fechado (SIGHUP) ou a máquina travar, o llama-server e o gateway
+    podem continuar vivos, segurando as portas 8101/8102/8443, e o próximo `lab.py demo` falharia.
+    """
+    if not PIDS.is_file():
+        return
+    try:
+        antigos = json.loads(PIDS.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        antigos = {}
+    for nome, pid in antigos.items():
+        if not _e_nosso(int(pid)):
+            continue
+        info(f"encerrando {nome} (pid {pid}) que ficou de uma execução anterior")
+        if WINDOWS:
+            subprocess.run(["taskkill", "/PID", str(pid), "/T", "/F"], capture_output=True)
+            continue
+        try:
+            os.kill(int(pid), signal.SIGTERM)
+            for _ in range(30):
+                time.sleep(0.5)
+                os.kill(int(pid), 0)  # ainda vivo?
+            os.kill(int(pid), signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+    PIDS.unlink(missing_ok=True)
 
 
 def parar_tudo() -> None:
@@ -238,6 +297,7 @@ def parar_tudo() -> None:
             except subprocess.TimeoutExpired:
                 proc.kill()
             info(f"{nome} parado")
+    _gravar_pids()
 
 
 def aguardar_ctrl_c() -> None:
@@ -795,7 +855,8 @@ def cmd_pacote(args: argparse.Namespace) -> int:
 
 
 def _sigterm(*_: object) -> None:
-    raise KeyboardInterrupt  # `kill` no lab.py encerra os filhos como o Ctrl+C
+    # `kill` no lab.py ou fechar o terminal (SIGHUP) encerra os filhos como o Ctrl+C.
+    raise KeyboardInterrupt
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -862,6 +923,9 @@ def main(argv: list[str] | None = None) -> int:
     args = p.parse_args(argv)
     if not WINDOWS:
         signal.signal(signal.SIGTERM, _sigterm)
+        signal.signal(signal.SIGHUP, _sigterm)
+    if args.comando in ("demo", "no", "gateway", "experimento"):
+        limpar_orfaos()
     try:
         return int(args.func(args))
     finally:
