@@ -113,4 +113,7 @@ _A confirmar com o modelo real: se o tokens/s por pedido fica acima da velocidad
 - Depois do primeiro token, a falha do nó é erro parcial, não continuação.
 - Só CPU: o modelo maior leva ~1 minuto por prontuário.
 - O roteador semântico é um piloto com 120 frases sintéticas e fica desligado por padrão.
-- A extração de prontuário não teve avaliação de qualidade; validar o JSON não garante fidelidade clínica.
+- A extração de prontuário não teve avaliação sistemática de qualidade, e validar o JSON não garante fidelidade. No
+  teste real com o modelo pequeno (10/11), o JSON veio válido, mas com campos trocados (temperatura no lugar da
+  pressão, frequência no lugar da via) e `alergias: null` para "nega alergias". Por isso o prontuário usa o modelo
+  maior por padrão.

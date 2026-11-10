@@ -5,6 +5,8 @@
 Detalhes, motivos e como conferir: [docs/MUDANCAS.md](docs/MUDANCAS.md). Estado anterior: tag `antes-do-plano-v2`.
 
 **Corrigido**
+- `lab.py`: download que vinha truncado sem erro (agora confere o tamanho e retoma com HTTP Range); órfãos ao fechar
+  o terminal (SIGHUP tratado, PIDs em `.lab/pids.json`). Os dois foram achados no teste real de 10/11.
 - 10 testes que falhavam no Windows (`os.fchmod`, Git Bash, prazo de 0,01 s).
 - Vaga presa quando o pedido era cancelado no mesmo instante em que ganhava a vaga. O bug era anterior ao plano e
   apareceu no ensaio do experimento.

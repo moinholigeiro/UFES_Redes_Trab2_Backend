@@ -224,7 +224,24 @@ testes cobrem as ferramentas (`tests/test_experimentos.py`). Explicação comple
 | Suíte do Frontend | 15 testes, todos passando |
 | Suíte do LLM | 10 testes, todos passando |
 | `lab.py experimento --simulado` no Ubuntu 24.04 (WSL), sem `python3-venv` | Caminho completo: uv → venv → gateway → calibração → previsão → carga → desafio → gráficos |
-| `lab.py demo --leve` com o modelo real no Ubuntu 24.04 | Ver o CHANGELOG da data |
+| `lab.py demo --leve` com o Qwen3 1.7B real no Ubuntu 24.04 (10/11) | Subiu em 15 s com o modelo já baixado. `/health` do nó sem chave → 200; chat no nó sem chave → 401; gateway sem token → 401. `redes`: `meta` → `queued` → trechos → `done` (96 tokens, `length`). `prontuario`: `result` com o JSON validado. Tela servida; `/metrics` com vazão |
+| Encerramento do `lab.py` no Ubuntu | SIGHUP (fechar o terminal) e SIGTERM encerram tudo; depois de um `kill -9`, o próximo `demo` encerra os órfãos e sobe |
+| Suítes no Windows (10/11) | Backend 145 testes, LLM 10, Frontend 15, contrato sincronizado |
+
+### O que o teste real achou
+
+1. **Download truncado sem erro.** O modelo de 1,1 GB veio cortado: a conexão fechou e o `read()` devolveu vazio,
+   sem exceção. O SHA-256 recusou o arquivo, como devia. Agora o `lab.py` compara o tamanho com o `Content-Length` e
+   retoma o download com HTTP Range.
+2. **Órfãos ao fechar o terminal.** O SIGHUP matava o `lab.py` sem encerrar o `llama-server` e o gateway, que ficavam
+   segurando as portas. Agora o SIGHUP é tratado, e os PIDs ficam em `.lab/pids.json` para limpar órfãos.
+3. **Qualidade da extração com o modelo pequeno** (`--leve`). No prontuário de teste, o Qwen3 1.7B:
+   - pôs a temperatura no campo da pressão arterial;
+   - pôs a frequência do remédio ("de 6/6 h") no campo da via;
+   - devolveu `alergias: null` para "nega alergias", quando o certo seria uma lista vazia.
+
+   O JSON é válido, mas o conteúdo não é fiel. Para o prontuário, use o modelo grande (o padrão sem `--leve`), e diga
+   isso na apresentação: validar o schema não garante fidelidade.
 
 ## Comentários da equipe
 
