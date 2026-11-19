@@ -48,3 +48,6 @@ dist/
 # lab.py: estado local (token, chave, TLS, logs) e ensaios simulados
 .lab/
 experiments/resultados/*_simulado/
+
+# imagem temporária do gerador do PDF da apresentação
+docs/apresentacao/ensaio.png

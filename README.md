@@ -165,6 +165,7 @@ O CI do GitHub Actions roda os testes e o lint a cada push.
 |---|---|
 | [EXPLICACAO.md](EXPLICACAO.md) | Diagramas (repositórios, camadas, fluxo de um pedido, falha) e o código explicado; perguntas de entrevista |
 | [docs/RELATORIO.md](docs/RELATORIO.md) | Relatório breve: as principais escolhas de implementação |
+| [docs/ROTEIRO-E-APRESENTACAO.pdf](docs/ROTEIRO-E-APRESENTACAO.pdf) | **Roteiro de teste no laboratório e material da apresentação** (decisões, trade-offs, perguntas prováveis). Gerador: `docs/apresentacao/gerar_pdf.py` |
 | [docs/PLANO.md](docs/PLANO.md) | Plano v2: requisitos, decisões D0–D19, cenários de máquinas |
 | [docs/MUDANCAS.md](docs/MUDANCAS.md) | O que mudou em 09/11 e como conferir |
 | [docs/LABORATORIO.md](docs/LABORATORIO.md) | Tutorial do laboratório |
