@@ -37,6 +37,27 @@ Sem `--cache`, o zip fica com poucos MB, e cada máquina baixa binário e modelo
 
 > A chave do pacote é um segredo do grupo: não publique o zip. Para trocar a chave, gere outro pacote.
 
+### Regra de ouro: um único pacote para todos (achado no teste de 19/11)
+
+Cada `lab.py pacote` cria **uma chave nova**. Se dois PCs descompactarem zips de pacotes diferentes, o nó recusa o
+gateway com **401** ("nó … recusou a chave de API"). Foi exatamente o que aconteceu no primeiro teste no laboratório.
+Para não repetir:
+
+1. **Uma pessoa** gera o pacote **uma vez**, depois do último `git pull`.
+2. Ela manda **o mesmo arquivo** por e-mail para os três integrantes. Sem `--cache`, o zip tem menos de 1 MB e cabe
+   no e-mail. O cache com binário e modelos (~4 GB) vai à parte, no pendrive, para a pasta `t2-lab/cache/`.
+3. Ninguém roda `lab.py pacote` de novo até a apresentação. Se precisar, o novo zip vai para todos outra vez.
+4. No laboratório, antes de qualquer teste, cada PC roda `python3 lab.py chave` e confere que a **impressão** (12
+   dígitos) é igual em todos.
+
+Se mesmo assim as chaves divergirem, dá para corrigir em 1 minuto, sem gerar outro pacote:
+
+```bash
+python3 lab.py chave --mostrar                    # no PC do gateway: imprime a chave
+python3 lab.py chave --definir 'COLE_A_CHAVE'     # no PC do nó: sobrescreve a chave dele
+# no PC do nó: Ctrl+C e python3 lab.py no ... de novo (o llama-server só lê a chave ao subir)
+```
+
 ## Passo 2 — No laboratório: a demonstração numa máquina (cenário 1)
 
 ```bash
@@ -134,7 +155,10 @@ fica fora do git, e **não é resultado do trabalho**.
 | `gateway não respondeu` | Erro de configuração | Veja `.lab/logs/gateway.log` |
 | O navegador recusa a página | Certificado da CA local | Avançado → Continuar, ou importe `.lab/tls/ca.crt` |
 | 401 na tela | Token errado | Copie o token impresso no fim do `lab.py demo` (também em `.lab/token`) |
-| Nó de outra máquina sempre "fora do ar" | Firewall ou chave diferente | `curl http://IP:8101/health` precisa responder; use o mesmo zip nas duas máquinas |
+| Nó de outra máquina sempre "fora do ar" | Nó parado, IP errado ou firewall | `curl http://IP:8101/health` no PC do gateway precisa responder `{"status":"ok"}` |
+| "nó … recusou a chave de API" (401) | Chaves diferentes (zips de pacotes diferentes) | `python3 lab.py chave` nos dois PCs; corrija com `chave --mostrar` / `--definir` e reinicie o nó |
+| `curl … Couldn't connect` | IP da rede virtual `192.168.122.x`, ou nó parado | Use o IP que o `lab.py no` imprimiu (rede `192.168.112.x` ou `10.9.12.x`) e deixe o nó rodando |
+| `curl` fica esperando e dá timeout | Firewall ou PCs em redes diferentes | Tente o outro IP do `hostname -I`; se nada passar, apresente com o `demo` num PC só |
 | Experimento lento demais | CPU | `--max-tokens 64`, `--reps 3`, `--pedidos 15` |
 
 **Onde fica cada coisa** (tudo dentro de `UFES_Redes_Trab2_Backend/.lab/`, fora do git):

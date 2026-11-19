@@ -297,7 +297,7 @@ O passo a passo completo, com solução de problemas, está em [LABORATORIO.md](
 **Antes, em casa (uma vez, numa máquina com acesso aos repositórios):**
 
 ```bash
-python3 lab.py pacote                # gera t2-lab.zip com os 3 repos fixados no commit atual
+python3 lab.py pacote                # gera t2-lab.zip com os 3 repos e UMA chave: mande o MESMO zip aos 3 por e-mail
 python3 lab.py baixar --destino /media/pendrive/t2-cache   # binário + modelos, com SHA-256 conferido
 ```
 
@@ -354,4 +354,5 @@ decisão da seção 2? Anote no próprio `MUDANCAS.md` e a gente decide junto. T
 | O laboratório estar sem internet | Usar o cache do pendrive: `python3 lab.py demo --cache /media/pendrive/t2-cache` |
 | A máquina ter pouca RAM | `--leve`: um modelo só, de ~1,1 GB |
 | O firewall bloquear as portas entre máquinas | Cenário 1 na apresentação; os outros cenários rodam nos notebooks da equipe |
+| **PCs com chaves diferentes** (aconteceu em 19/11: zips de pacotes diferentes → 401 do nó) | **Um pacote só, mandado por e-mail aos três**; `lab.py chave` no início do teste; `chave --definir` para corrigir na hora (ver LABORATORIO.md) |
 | Não dar tempo de 3 repetições | Prioridade: entender o código (40 pts), depois o cenário 3, depois a pergunta-desafio, depois o cenário 4 |

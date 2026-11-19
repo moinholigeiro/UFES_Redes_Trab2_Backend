@@ -216,6 +216,7 @@ def montar():
         ["5", "Falhas, erros e segurança", "7"],
         ["6", "Perguntas prováveis do professor", "8"],
         ["7", "Roteiro de fala (~10 min) e checklist do dia", "9"],
+        ["8", "Solução de problemas na rede local (para consertar durante a apresentação)", "10"],
     ], [1.5, 13, 1.5]))
     h += [Spacer(1, 0.8 * cm), P(
         "<b>Por que este material:</b> pelas instruções de entrega, <b>40 dos 100 pontos</b> são "
@@ -225,22 +226,26 @@ def montar():
 
     # ---- parte 1: roteiro
     h.append(P("1. Roteiro de teste no laboratório", "h1"))
-    h.append(P("<b>Antes do lab (em casa, uma pessoa, ~4 GB de download).</b> Com os 3 repositórios lado a "
-               "lado e atualizados (<font name='Mono'>git pull</font> nos três):"))
+    h.append(P("<b>Antes do lab (em casa, UMA pessoa).</b> Com os 3 repositórios lado a lado e atualizados "
+               "(<font name='Mono'>git pull</font> nos três):"))
     h.append(codigo("""
 cd UFES_Redes_Trab2_Backend
-python3 lab.py baixar --destino ../cache --sistema todos
-python3 lab.py pacote --cache ../cache          # gera ../t2-lab.zip  -> pendrive
+python3 lab.py pacote                           # ../t2-lab.zip (< 1 MB): código + UMA chave
+python3 lab.py baixar --destino ../cache --sistema todos   # binário + modelos (~4 GB) -> pendrive
 """))
-    h.append(P("O zip leva o código no commit atual, o <font name='Mono'>llama-server</font> oficial, os "
-               "modelos (conferidos por SHA-256) e <b>uma chave compartilhada</b> entre gateway e nós. Nenhum PC "
-               "do lab precisa de senha do GitHub nem de internet."))
+    h.append(P("<b>Regra de ouro: um único pacote para todos.</b> Cada <font name='Mono'>lab.py pacote</font> cria "
+               "uma chave nova; PCs com zips de pacotes diferentes dão <b>401 \"nó recusou a chave de API\"</b> "
+               "(aconteceu no teste de 19/11). Quem gerou o pacote <b>manda o mesmo t2-lab.zip por e-mail aos "
+               "três</b> e ninguém gera outro até a apresentação. O cache de ~4 GB vai no pendrive e é copiado "
+               "para <font name='Mono'>t2-lab/cache/</font> em cada PC.", "aviso"))
     h.append(P("Papéis", "h2"))
     h.append(diagrama_lab())
-    h.append(P("<b>Passo 0, em todos os PCs:</b> descompactar o <b>mesmo</b> zip e anotar o IP no grupo.", "p"))
+    h.append(P("<b>Passo 0, em todos os PCs:</b> descompactar o <b>mesmo</b> zip, copiar o cache do pendrive, "
+               "anotar o IP e conferir que a impressão da chave é <b>igual em todos</b>.", "p"))
     h.append(codigo("""
-unzip t2-lab.zip && cd t2-lab/UFES_Redes_Trab2_Backend
-hostname -I
+unzip t2-lab.zip && cp -r /media/<pendrive>/cache t2-lab/ && cd t2-lab/UFES_Redes_Trab2_Backend
+hostname -I          # use 192.168.112.x ou 10.9.12.x; 192.168.122.x é rede virtual, não serve
+python3 lab.py chave # os 12 dígitos têm que ser iguais em todos os PCs
 """))
     h.append(P("Testes", "h2"))
     h.append(tabela(["#", "Onde", "Comando", "O que conferir"], [
@@ -270,7 +275,8 @@ hostname -I
     ], [0.6, 2.2, 7.2, 7.0]))
     h.append(P("O caminho do <font name='Mono'>ca.crt</font> é impresso pelo gateway na linha \"Certificado da "
                "CA\". O teste 5 deve rodar <b>sem nada mais pesado na mesma máquina</b>.", "pequeno"))
-    h.append(KeepTogether([P("Se der problema", "h2"), tabela(["Sintoma", "O que fazer"], [
+    h.append(P("Se der problema: <b>parte 8</b> (pág. 10), com diagnóstico em 4 comandos e as correções.", "h2"))
+    h.append(KeepTogether([tabela(["Sintoma rápido", "O que fazer"], [
         ["Erro ao subir", "Ler <font name='Mono'>.lab/logs/&lt;nome&gt;.log</font>"],
         ["<font name='Mono'>curl</font> no nó não responde de outro PC",
          "Firewall do lab: apresentar com o teste 1 (tudo num PC) e explicar o desenho distribuído pelo diagrama"],
@@ -482,7 +488,8 @@ hostname -I
     ], [1.2, 2.6, 8.7, 4.5]))
     h.append(P("Checklist do dia", "h2"))
     for item in [
-        "Pendrive com o <b>t2-lab.zip</b> mais recente (gerado depois do último git pull nos 3 repos)",
+        "<b>O mesmo t2-lab.zip</b> no e-mail dos três (um pacote só) e o cache de modelos no pendrive",
+        "<font name='Mono'>python3 lab.py chave</font> com a mesma impressão em todos os PCs",
         "Teste 1 rodado no PC da apresentação <b>antes</b> do professor chegar (modelo já carregado)",
         "IPs anotados; <font name='Mono'>curl http://IP:8101/health</font> conferido entre os PCs",
         "Prints de reserva: tela com fila, Wireshark, /metrics, gráficos do experimento",
@@ -501,6 +508,84 @@ hostname -I
         ["Só CPU: prontuário com o modelo grande leva ~1 min", "Hardware do lab; GPU é melhoria futura"],
         ["Validar o JSON não garante o conteúdo", "Medimos no teste real; por isso o prontuário usa o modelo grande"],
     ], [7, 10]))
+    h.append(PageBreak())
+    h += parte_8()
+    return h
+
+
+def parte_8():
+    h = [P("8. Solução de problemas na rede local", "h1"),
+         P("Para consertar <b>durante a apresentação</b>. Vá na ordem: cada passo elimina uma causa.")]
+    h.append(P("Diagnóstico em 4 comandos", "h2"))
+    h.append(tabela(["#", "Onde", "Comando", "Resultado certo", "Se der errado"], [
+        ["1", "PC do nó", "<font name='Mono'>python3 lab.py no --modelo pequeno</font>",
+         "\"nó ... pronto em http://IP:8101\" e o terminal <b>continua aberto</b>",
+         "Ctrl+C para o nó. Ler <font name='Mono'>.lab/logs/&lt;nó&gt;.log</font> se ele morreu"],
+        ["2", "PC do gateway", "<font name='Mono'>curl http://IP_NO:8101/health</font>",
+         "<font name='Mono'>{\"status\":\"ok\"}</font>",
+         "\"Couldn't connect\" na hora: nó parado ou IP errado. Demora e dá timeout: firewall ou rede diferente"],
+        ["3", "Todos os PCs", "<font name='Mono'>python3 lab.py chave</font>", "Mesmos 12 dígitos em todos",
+         "Sobrescrever a chave (abaixo) e reiniciar o nó"],
+        ["4", "PC do gateway",
+         "<font name='Mono'>python3 lab.py gateway --publico --nos redes=IP_NO:8101</font>",
+         "Banner \"T2 no ar\" e a tela respondendo", "Ver a mensagem de erro na tela (tabela abaixo)"],
+    ], [0.6, 2.2, 5.3, 4.2, 4.7]))
+    h.append(P("Sobrescrever a chave (1 minuto, sem gerar outro pacote)", "h2"))
+    h.append(codigo("""
+# no PC do gateway (a chave "certa"):
+python3 lab.py chave --mostrar
+# no PC do nó (a chave errada):
+python3 lab.py chave --definir 'COLE_A_CHAVE_AQUI'
+# no PC do nó: Ctrl+C no nó e suba de novo (o llama-server só lê a chave ao iniciar)
+python3 lab.py no --modelo pequeno
+"""))
+    h.append(P("Mensagens de erro e correções", "h2"))
+    h.append(tabela(["Mensagem / sintoma", "Causa", "Correção"], [
+        ["<b>nó ... recusou a chave de API</b>", "Chaves diferentes (zips de pacotes diferentes)",
+         "Sobrescrever a chave e reiniciar o nó. <i>Boa notícia: a rede funciona, o 401 veio do nó</i>"],
+        ["<b>nenhum nó saudável</b> (503)", "O gateway não alcança nenhum nó; o /health é checado a cada 2 s",
+         "Passo 2 (<font name='Mono'>curl</font>) no PC do gateway; esperar 2 s depois do nó subir"],
+        ["<b>curl: Couldn't connect</b>", "Nó parado, porta errada, ou IP da rede virtual "
+         "<font name='Mono'>192.168.122.x</font>", "Subir o nó e usar o IP que o <font name='Mono'>lab.py no</font> "
+         "imprimiu (<font name='Mono'>192.168.112.x</font> ou <font name='Mono'>10.9.12.x</font>)"],
+        ["<b>curl</b> fica esperando (timeout)", "Firewall ou PCs em redes diferentes",
+         "Tentar o outro IP do <font name='Mono'>hostname -I</font>; se nada passar, plano B"],
+        ["<b>Confirme que confia na origem HTTPS</b>", "Tela aberta de outro PC (https://IP_A:8443)",
+         "Marcar a caixa \"Confio nesta origem HTTPS\" antes de enviar"],
+        ["Navegador: certificado desconhecido", "CA local do trabalho", "Avançado → Continuar"],
+        ["<b>401 / token inválido</b> na tela", "Token de outro PC: cada gateway gera o seu",
+         "Colar o token impresso pelo gateway que está no ar (<font name='Mono'>.lab/token</font> do PC-A)"],
+        ["<b>capacidade esgotada</b> (503 queue_full)", "Fila do nó cheia", "Esperar alguns segundos e reenviar"],
+        ["Erro com texto pela metade (partial)", "O nó caiu durante a resposta",
+         "Esperado no teste 4 (falha de nó). Reenviar: vai para outra réplica"],
+        ["Prontuário demora ~1 min ou dá prazo excedido", "Modelo grande em CPU",
+         "Enviar um pedido por vez; não abrir várias abas no prontuário"],
+        ["Porta em uso / endereço em uso", "Processo que sobrou de uma execução anterior",
+         "Rodar o mesmo comando de novo (ele encerra o que sobrou) ou "
+         "<font name='Mono'>pkill -f llama-server</font>"],
+        ["Nó morre ao subir (log: memory / failed to load)", "Falta RAM", "<font name='Mono'>--leve</font> ou outro PC"],
+        ["Wireshark sem permissão", "Usuário do lab sem sudo",
+         "Provar com <font name='Mono'>ss -tn | grep 8101</font> e o log do nó (abaixo)"],
+        ["Log do nó sem linhas novas ao enviar", "O pedido foi para outro nó (ou o demo local está rodando)",
+         "No PC do gateway, <font name='Mono'>pgrep -a llama-server</font> tem que vir vazio"],
+    ], [4.4, 5.2, 7.4]))
+    h.append(P("Como provar que o modelo roda no outro PC", "h2"))
+    h.append(tabela(["Prova", "Onde", "Comando / ação"], [
+        ["O modelo rodou <b>neste</b> PC: a cada pergunta aparecem <font name='Mono'>launch_slot</font>, "
+         "<font name='Mono'>print_timing</font> (tokens/s) e <font name='Mono'>release</font>", "PC do nó",
+         "<font name='Mono'>tail -f .lab/logs/&lt;nó&gt;.log</font> e enviar uma pergunta pela tela"],
+        ["O pedido veio <b>do gateway</b>: conexão TCP com o IP do PC-A (o log não mostra IP)", "PC do nó",
+         "<font name='Mono'>ss -tn | grep 8101</font> durante a resposta"],
+        ["Conexão TCP aberta para o nó", "PC do gateway", "<font name='Mono'>ss -tn | grep 8101</font> durante a "
+                                                          "resposta"],
+        ["Nenhum modelo no PC do gateway", "PC do gateway", "<font name='Mono'>pgrep -a llama-server</font> "
+                                                            "(não mostra nada)"],
+        ["CPU do nó a 100% só durante a geração", "PC do nó", "<font name='Mono'>top</font>"],
+        ["Derrubar o nó derruba a resposta", "PC do nó", "Ctrl+C → a tela passa a dar \"nenhum nó saudável\""],
+    ], [6.2, 3, 7.8]))
+    h.append(P("<b>Plano B se a rede falhar na hora:</b> <font name='Mono'>python3 lab.py demo --leve</font> num PC "
+               "só (sobe em ~15 s), mostrar o diagrama da pág. 4 e os <b>prints do teste distribuído</b> tirados "
+               "antes. Tirem esses prints no ensaio!", "aviso"))
     return h
 
 

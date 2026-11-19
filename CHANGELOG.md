@@ -1,5 +1,16 @@
 # Changelog — Backend
 
+## 19/11/2026 — Primeiro teste distribuído no laboratório
+
+- **Funcionou:** gateway no PC-A (grad215) e nó Qwen3 1.7B no PC-B (grad214), na rede 192.168.112.x. O log do
+  `llama-server` no B registrou as gerações pedidas pela tela do A (~14–15 tokens/s).
+- **Problema:** PCs com zips de pacotes diferentes ficaram com chaves diferentes, e o nó devolveu 401 ao gateway.
+- **Novo:** `python3 lab.py chave` (impressão da chave, para comparar entre PCs), `chave --mostrar` e
+  `chave --definir` para corrigir na hora; impressão da chave no banner do gateway e na saída do nó.
+- **Planejamento:** um único pacote, mandado por e-mail aos três (`docs/LABORATORIO.md`, `docs/PLANO.md`).
+- **PDF:** parte 8 com a solução de problemas na rede local (diagnóstico em 4 comandos, mensagens de erro, como provar
+  a comunicação, plano B).
+
 ## 09/11/2026 — Plano v2
 
 Detalhes, motivos e como conferir: [docs/MUDANCAS.md](docs/MUDANCAS.md). Estado anterior: tag `antes-do-plano-v2`.

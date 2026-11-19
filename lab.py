@@ -7,6 +7,7 @@
     python3 lab.py gateway --nos redes=10.0.0.5:8101,prontuario=10.0.0.5:8102
     python3 lab.py experimento          # experimento obrigatório + pergunta-desafio, com gráficos
     python3 lab.py experimento --simulado   # ensaio rápido, sem modelo (não é resultado)
+    python3 lab.py chave                # impressão da chave dos nós: tem que ser igual em todos os PCs
     python3 lab.py baixar --destino /media/pendrive/t2-cache   # binário + modelos para levar
     python3 lab.py pacote               # t2-lab.zip com os 3 repositórios, para o laboratório
 
@@ -402,6 +403,12 @@ def garantir_chave() -> Path:
     return chave
 
 
+def impressao_da_chave() -> str:
+    """12 primeiros dígitos do SHA-256 da chave: comparar entre PCs sem expor a chave."""
+    valor = garantir_chave().read_text(encoding="utf-8").strip()
+    return hashlib.sha256(valor.encode("utf-8")).hexdigest()[:12]
+
+
 def garantir_token(python: Path) -> str:
     token = ESTADO / "token"
     if token.is_file():
@@ -630,6 +637,7 @@ def banner(url: str, token: str, tls: Path | None, publico: bool) -> None:
     if publico:
         print(f"  Na rede do laboratório:  {url.replace('127.0.0.1', ip_da_lan())}")
     print(f"  Token (cole na tela):    {token}")
+    print(f"  Impressão da chave:      {impressao_da_chave()}  (igual em todos os nós; senão, 401)")
     if tls:
         print(f"  Certificado da CA:       {tls / 'ca.crt'}")
         print("  O navegador vai avisar que o certificado é desconhecido: é a CA local deste trabalho.")
@@ -674,8 +682,31 @@ def cmd_no(args: argparse.Namespace) -> int:
     print(f"\n[lab] nó {nome} pronto em {url}  (modelo {args.modelo}, {args.slots} vaga(s)).")
     print(f"[lab] No gateway, use:  --nos {'redes' if args.modelo == 'pequeno' else 'prontuario'}"
           f"={url.split('//')[1]}")
-    print("[lab] A chave entre gateway e nó é .lab/node-api-key: precisa ser a mesma nas duas máquinas.\n")
+    print(f"[lab] Impressão da chave: {impressao_da_chave()}  (tem que ser IGUAL à do gateway: "
+          "python3 lab.py chave)\n")
     aguardar_ctrl_c()
+    return 0
+
+
+def cmd_chave(args: argparse.Namespace) -> int:
+    """Mostra a impressão da chave dos nós ou a sobrescreve (quando os PCs ficaram com chaves diferentes)."""
+    if args.definir:
+        valor = args.definir.strip()
+        if len(valor) < 16:
+            falha("chave curta demais: copie a chave inteira do outro PC (cat .lab/node-api-key)")
+        chave = garantir_chave()
+        chave.write_text(valor, encoding="utf-8")
+        if not WINDOWS:
+            chave.chmod(0o600)
+        info("chave sobrescrita. Reinicie o nó (Ctrl+C e lab.py no ...): "
+             "o llama-server só lê a chave ao subir")
+    if args.mostrar:
+        print(garantir_chave().read_text(encoding="utf-8").strip())
+        return 0
+    print(f"impressão da chave: {impressao_da_chave()}")
+    print("compare em todos os PCs: tem que ser igual. Para copiar: no PC certo, "
+          "python3 lab.py chave --mostrar;")
+    print("no PC errado, python3 lab.py chave --definir '<chave>' e reinicie o nó")
     return 0
 
 
@@ -908,6 +939,11 @@ def main(argv: list[str] | None = None) -> int:
     e.add_argument("--saida", type=Path)
     e.add_argument("--cache", type=Path)
     e.set_defaults(func=cmd_experimento)
+
+    c = sub.add_parser("chave", help="mostra ou sobrescreve a chave entre gateway e nós")
+    c.add_argument("--mostrar", action="store_true", help="imprime a chave (para copiar para outro PC)")
+    c.add_argument("--definir", help="sobrescreve a chave deste PC com a do outro PC")
+    c.set_defaults(func=cmd_chave)
 
     b = sub.add_parser("baixar", help="baixa binários e modelos para um cache (pendrive)")
     b.add_argument("--destino", type=Path, required=True)
