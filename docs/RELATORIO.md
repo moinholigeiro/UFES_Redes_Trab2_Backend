@@ -1,6 +1,7 @@
 # Relatório — Gateway distribuído de LLMs abertos
 
 Trabalho 2 de Redes de Computadores (INF16158) · UFES · Daniel, Lívia e Eduardo · entrega em 22/11/2026.
+Versão em PDF: [RELATORIO.pdf](RELATORIO.pdf).
 
 Este relatório explica as **principais escolhas de implementação**, como pedem as instruções de entrega. O código
 explicado arquivo por arquivo está em [EXPLICACAO.md](../EXPLICACAO.md), e as decisões com as alternativas avaliadas

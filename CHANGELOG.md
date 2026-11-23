@@ -5,6 +5,7 @@
 - **Relatório:**
   - seção 5 com a medição do laboratório: tokens/s por pedido, cache de prefixo e fila de 3 clientes com TTFT de 54 s;
   - seção 6 com a resposta da pergunta-desafio a partir dos dados reais.
+- **Relatório em PDF:** `docs/RELATORIO.pdf`, gerado do `.md` por `docs/apresentacao/gerar_relatorio_pdf.py`.
 - **PDF de apresentação:** tabela da medição do laboratório na parte 4 e índice de páginas atualizado.
 
 ## 19/11/2026 — Primeiro teste distribuído no laboratório
