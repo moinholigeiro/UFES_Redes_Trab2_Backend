@@ -45,8 +45,8 @@ funcionalidade nova**: na dúvida, simplificar.
 | Desempenho: 3 políticas de balanceamento, failover | `balancing.py`, `gateway.py` | Feito; "menor latência" foi corrigida e os pedidos presos num nó que caiu passam a migrar |
 | Segurança: token, domínio, limite de taxa, TLS | `security.py`, `cli.py` | Feito; o bug do Windows foi corrigido; chave de API entre gateway e nós |
 | Inteligência: roteamento semântico | `routing.py` | Mantido como **opcional e desligado** (decisão D3) |
-| Experimento: N = 1…16, previsão antes, repetições, gráficos | `experiments/` | Ferramentas prontas e testadas em modo simulado; **a medição real roda no laboratório** |
-| Pergunta-desafio | `experiments/`, política de fila | Ferramentas prontas; **a medição real roda no laboratório** |
+| Experimento: N = 1…16, previsão antes, repetições, gráficos | `experiments/` | Ferramentas validadas no ensaio simulado; medição com o Qwen3 1.7B no laboratório (19/11), no relatório |
+| Pergunta-desafio | `experiments/`, política de fila | Respondida com os dados do laboratório (relatório, seção 6) |
 | Relatório breve (instruções de entrega) | `docs/RELATORIO.pdf` (fonte: `docs/RELATORIO.md`) | Pronto, com a medição do laboratório (19/11) |
 | README reproduzível e demonstração | `README.md`, `lab.py`, `docs/LABORATORIO.md` | Um comando: `python3 lab.py demo` |
 
