@@ -213,10 +213,10 @@ def montar():
         ["2", "O sistema em uma página", "4"],
         ["3", "Decisões técnicas e trade-offs (o coração da apresentação)", "5"],
         ["4", "Fila, concorrência e o experimento", "6"],
-        ["5", "Falhas, erros e segurança", "7"],
-        ["6", "Perguntas prováveis do professor", "8"],
-        ["7", "Roteiro de fala (~10 min) e checklist do dia", "9"],
-        ["8", "Solução de problemas na rede local (para consertar durante a apresentação)", "10"],
+        ["5", "Falhas, erros e segurança", "8"],
+        ["6", "Perguntas prováveis do professor", "9"],
+        ["7", "Roteiro de fala (~10 min) e checklist do dia", "10"],
+        ["8", "Solução de problemas na rede local (para consertar durante a apresentação)", "11"],
     ], [1.5, 13, 1.5]))
     h += [Spacer(1, 0.8 * cm), P(
         "<b>Por que este material:</b> pelas instruções de entrega, <b>40 dos 100 pontos</b> são "
@@ -275,7 +275,7 @@ python3 lab.py chave # os 12 dígitos têm que ser iguais em todos os PCs
     ], [0.6, 2.2, 7.2, 7.0]))
     h.append(P("O caminho do <font name='Mono'>ca.crt</font> é impresso pelo gateway na linha \"Certificado da "
                "CA\". O teste 5 deve rodar <b>sem nada mais pesado na mesma máquina</b>.", "pequeno"))
-    h.append(P("Se der problema: <b>parte 8</b> (pág. 10), com diagnóstico em 4 comandos e as correções.", "h2"))
+    h.append(P("Se der problema: <b>parte 8</b> (pág. 11), com diagnóstico em 4 comandos e as correções.", "h2"))
     h.append(KeepTogether([tabela(["Sintoma rápido", "O que fazer"], [
         ["Erro ao subir", "Ler <font name='Mono'>.lab/logs/&lt;nome&gt;.log</font>"],
         ["<font name='Mono'>curl</font> no nó não responde de outro PC",
@@ -384,10 +384,17 @@ python3 lab.py chave # os 12 dígitos têm que ser iguais em todos os PCs
     h.append(P("Vazão máxima X = K/S. Lei de Little: R = N/X = N·S/K. Quem chega espera R − S na fila, então "
                "<b>para N &gt; K: TTFT ≈ (N/K − 1)·S + T0</b>; para N ≤ K, TTFT ≈ T0. O TTFT \"dispara\" em N = K e "
                "depois cresce em linha reta; a vazão agregada fica plana."))
-    h.append(Image(str(grafico_ensaio()), width=15 * cm, height=7.7 * cm))
+    h.append(Image(str(grafico_ensaio()), width=13 * cm, height=6.7 * cm))
     h.append(P("<b>Ensaio simulado</b> (nó sem modelo, 09/11): valida que as ferramentas medem o que dizem; "
-               "<b>não é o resultado</b>. Medido a menos de 5% do previsto. O resultado real sai do teste 5.",
+               "<b>não é o resultado</b>. Medido a menos de 5% do previsto.",
                "pequeno"))
+    h.append(P("No laboratório (19/11): Qwen3 1.7B no PC-B, gateway no PC-A, K = 1", "h2"))
+    h.append(tabela(["Medida", "Valor", "O que mostra"], [
+        ["Geração por pedido", "15,5 · 14,4 · 12,2 tokens/s", "Estável, 2 a 3× a velocidade de leitura"],
+        ["Prompt do 2º pedido", "0,97 s → 0,25 s", "Cache de prefixo do llama-server (só 20 tokens novos)"],
+        ["3º cliente na fila (3 abas juntas)", "TTFT 54,3 s; fim a fim 73,3 s; 231 tokens",
+         "Esperou 2 atendimentos inteiros: TTFT ≈ (N/K − 1)·S + T0 com S ≈ 26 s"],
+    ], [5, 5.5, 6.5]))
     h.append(P("O que o ensaio pegou (bom exemplo para a apresentação)", "h2"))
     h.append(tabela(["Problema", "Causa", "Correção"], [
         ["A fila travou depois de uma rodada de carga",
@@ -398,11 +405,11 @@ python3 lab.py chave # os 12 dígitos têm que ser iguais em todos os PCs
          "Execuções curtas: só concluíam os pedidos que esperaram pouco (viés de sobrevivência)",
          "Descartar a primeira leva de N pedidos (regime estável)"],
     ], [4.5, 7.5, 5]))
-    h.append(P("Pergunta-desafio: TTFT ou tokens/s?", "h2"))
-    h.append(P("Uma pessoa lê ~4 a 7 tokens/s. Se cada pedido gera mais rápido que isso, mais tokens/s não muda o "
-               "que o usuário sente: <b>o que pesa é o TTFT</b>, a espera até a primeira palavra. No ensaio com 8 "
+    h.append(KeepTogether([P("Pergunta-desafio: TTFT ou tokens/s?", "h2"), P("Uma pessoa lê ~4 a 7 tokens/s. Se cada pedido gera mais rápido que isso, mais tokens/s não muda o "
+               "que o usuário sente: <b>o que pesa é o TTFT</b>, a espera até a primeira palavra. No lab, o 3º cliente "
+               "esperou 54 s pela primeira palavra e leu a resposta inteira em 19 s. No ensaio com 8 "
                "clientes e metade dos pedidos curtos, <b>curtos primeiro</b> baixou o TTFT médio de 10,5 s para "
-               "5,4 s, mas o p95 subiu de 11,0 s para 17,3 s: os longos pagam pela espera menor dos curtos."))
+               "5,4 s, mas o p95 subiu de 11,0 s para 17,3 s: os longos pagam pela espera menor dos curtos.")]))
     h.append(PageBreak())
 
     # ---- parte 5: falhas, erros, segurança

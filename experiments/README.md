@@ -71,7 +71,7 @@ Colunas extras da execução: `clientes`, `duracao_s`, `k`, `politica`, `rep`. P
 | Rodada | Tipo | Pasta |
 |---|---|---|
 | 09/11/2026 | **Ensaio simulado** (Ubuntu 24.04, WSL): valida as ferramentas; não é resultado | não versionada |
-| _a fazer_ | Medição real no laboratório | `resultados/<data>/` |
+| 19/11/2026 | **Laboratório**: gateway no PC-A, Qwen3 1.7B no PC-B (só CPU), K = 1; pedidos isolados e fila com 3 clientes | [docs/RELATORIO.md](../docs/RELATORIO.md), seção 5 |
 
-Ao terminar a medição real, faça o commit da pasta inteira: CSVs, `previsao-k*.json`, `resumo.md`, os PNGs e o
-`LEIA-ME.txt`, que registra o comando usado.
+Numa rodada completa do `lab.py experimento`, faça o commit da pasta inteira: CSVs, `previsao-k*.json`, `resumo.md`, os
+PNGs e o `LEIA-ME.txt`, que registra o comando usado.

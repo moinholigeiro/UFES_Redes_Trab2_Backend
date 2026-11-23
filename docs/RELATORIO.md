@@ -93,8 +93,40 @@ O ensaio achou dois problemas, que estragariam a medição real:
 2. **Execuções curtas tinham viés de sobrevivência:** só concluíam os pedidos que esperaram pouco. Com N = 16, o
    TTFT medido dava 6 s contra 16 s previstos. A correção é descartar a primeira leva.
 
-**Medição real com o Qwen3 1.7B no laboratório:** _a preencher com `experiments/resultados/<data>/resumo.md` e os
-gráficos `ttft_vs_clientes.png`, `vazao_vs_clientes.png` e `desafio_ttft_por_classe.png`._
+**Medição no laboratório (19/11), com o Qwen3 1.7B (Q4_K_M, só CPU).**
+- **Rede:** gateway e tela no PC-A (grad215, 192.168.112.166). Nó `llama-server` no PC-B (grad214,
+  192.168.112.169:8101), com uma vaga (K = 1).
+- **Prova da distribuição:** o log do `llama-server` no PC-B registrou cada pedido enviado pela tela do PC-A.
+- **Vídeo:** a sessão foi gravada em vídeo, como reserva para a apresentação.
+
+| Pedido | Prompt processado | Geração | Total no nó |
+|---|---|---|---|
+| 1º | 109 tokens em 0,97 s (112 tokens/s) | 120 tokens em 7,68 s (**15,5 tokens/s**) | 8,65 s |
+| 2º | 20 tokens novos em 0,25 s (cache de prefixo) | 249 tokens em 17,29 s (**14,4 tokens/s**) | 17,53 s |
+
+**Fila com três clientes (vídeo).** Três abas mandaram um prontuário cada, ao mesmo tempo, para o nó de uma vaga:
+- A tela mostrou a posição ao vivo ("Posição na fila do nó redes-1: 2º").
+- O primeiro cliente recebeu os tokens em streaming enquanto os outros esperavam, e os demais foram atendidos em
+  ordem.
+
+O painel do terceiro cliente registrou:
+
+| Métrica | Valor |
+|---|---|
+| TTFT (navegador) | **54,3 s** |
+| Latência fim a fim | 73,3 s |
+| Tokens gerados | 231 |
+| Velocidade de geração | 12,2 tokens/s |
+| Fim | completa |
+
+**O que os números mostram.**
+- **A previsão se confirma na prática.** A geração do terceiro pedido levou 73,3 − 54,3 ≈ 19 s. O TTFT de 54 s
+  equivale a dois atendimentos inteiros à frente dele, como prevê TTFT ≈ (N/K − 1)·S + T0 com N = 3 e K = 1. Isso dá
+  S ≈ 26 s por prontuário: ~19 s de geração mais o processamento do prompt longo. Com uma vaga, cada cliente a mais na
+  fila custa um atendimento inteiro de espera.
+- **O cache de prefixo do `llama-server` funciona.** No segundo pedido, o nó reaproveitou o prompt em comum com o
+  primeiro, processou só 20 tokens novos e baixou o tempo de prompt de 0,97 s para 0,25 s.
+- **A geração por pedido é estável.** Ficou entre 12 e 15,5 tokens/s nos três registros, sozinho ou com fila.
 
 ## 6. Pergunta-desafio: TTFT ou tokens/s?
 
@@ -105,7 +137,15 @@ No ensaio simulado com N = 8 e metade dos pedidos curtos, "curtos primeiro" baix
 mas o p95 subiu de 11,0 s para 17,3 s: os pedidos longos pagaram pela espera menor dos curtos. É a troca esperada: a
 política melhora a média e a experiência de quem pede pouco, à custa da cauda.
 
-_A confirmar com o modelo real: se o tokens/s por pedido fica acima da velocidade de leitura mesmo com o nó saturado._
+**No laboratório.**
+- **Dados:** a geração ficou entre 12 e 15,5 tokens/s por pedido, de 2 a 3 vezes a velocidade de leitura, mesmo com
+  fila. Já o terceiro cliente esperou 54 s pela primeira palavra e depois leu a resposta inteira em 19 s.
+- **Resposta:** para o usuário, o que pesa é o **TTFT**. Mais tokens/s quase não mudaria a experiência; o que muda é
+  reduzir a espera na fila.
+- **Como reduzir a espera:**
+  - mais vagas ou réplicas, o que divide N/K;
+  - balanceamento por menor latência entre os nós;
+  - "curtos primeiro", para quem pede pouco.
 
 ## 7. Limitações
 

@@ -47,7 +47,7 @@ funcionalidade nova**: na dúvida, simplificar.
 | Inteligência: roteamento semântico | `routing.py` | Mantido como **opcional e desligado** (decisão D3) |
 | Experimento: N = 1…16, previsão antes, repetições, gráficos | `experiments/` | Ferramentas prontas e testadas em modo simulado; **a medição real roda no laboratório** |
 | Pergunta-desafio | `experiments/`, política de fila | Ferramentas prontas; **a medição real roda no laboratório** |
-| Relatório breve (instruções de entrega) | `docs/RELATORIO.md` | Escrito; falta preencher a medição real |
+| Relatório breve (instruções de entrega) | `docs/RELATORIO.md` | Pronto, com a medição do laboratório (19/11) |
 | README reproduzível e demonstração | `README.md`, `lab.py`, `docs/LABORATORIO.md` | Um comando: `python3 lab.py demo` |
 
 ---

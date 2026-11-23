@@ -206,7 +206,7 @@ testes cobrem as ferramentas (`tests/test_experimentos.py`). Explicação comple
   "conhecimento sobre o código"**. Por isso a simplificação e os diagramas viraram a prioridade (ver `PLANO.md`).
 - **README** no formato pedido (descrição, tecnologias, como executar, como testar, funcionalidades, melhorias), mais um
   `requirements.txt`.
-- **Relatório breve** escrito em [RELATORIO.md](RELATORIO.md). Falta preencher a medição real.
+- **Relatório breve** escrito em [RELATORIO.md](RELATORIO.md). A medição do laboratório (19/11) está na seção 5.
 - **Experimento:** o padrão do `lab.py experimento` passou para 3 repetições de 20 pedidos, ~3 a 4 h na CPU.
 
 ## O que NÃO mudou

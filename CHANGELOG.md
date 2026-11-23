@@ -1,5 +1,12 @@
 # Changelog — Backend
 
+## 22/11/2026 — Entrega
+
+- **Relatório:**
+  - seção 5 com a medição do laboratório: tokens/s por pedido, cache de prefixo e fila de 3 clientes com TTFT de 54 s;
+  - seção 6 com a resposta da pergunta-desafio a partir dos dados reais.
+- **PDF de apresentação:** tabela da medição do laboratório na parte 4 e índice de páginas atualizado.
+
 ## 19/11/2026 — Primeiro teste distribuído no laboratório
 
 - **Funcionou:** gateway no PC-A (grad215) e nó Qwen3 1.7B no PC-B (grad214), na rede 192.168.112.x. O log do
